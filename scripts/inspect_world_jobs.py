@@ -10,7 +10,7 @@ def request(url,headers,body=None):
 def main():
     base=os.environ['SUPABASE_URL'].rstrip('/');key=os.environ['SUPABASE_SERVICE_ROLE_KEY']
     headers={'apikey':key,'Authorization':'Bearer '+key,'Content-Type':'application/json'}
-    status,jobs=request(base+'/rest/v1/world_generation_jobs?select=id,user_id,status,model,operation_id,world_id,reserved_credits,journal_entry_id,created_at,updated_at&order=created_at.desc',headers)
+    status,jobs=request(base+'/rest/v1/world_generation_jobs?select=id,user_id,status,model,operation_id,world_id,reserved_credits,journal_entry_id,allowance_released,created_at,updated_at&order=created_at.desc',headers)
     print('OWNER_DIAGNOSTIC jobs_http',status,flush=True)
     if status!=200:raise RuntimeError('Cannot inspect job records')
     for job in jobs:
