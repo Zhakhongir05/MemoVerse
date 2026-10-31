@@ -3,6 +3,7 @@ import asyncio
 import copy
 import os
 import math
+import logging
 from uuid import UUID,uuid4
 from fastapi import APIRouter,Depends,HTTPException,Request
 from .world_accounts import authenticated_user
@@ -64,7 +65,10 @@ async def advance_tour(tour_id:UUID,user=Depends(authenticated_user),store=Depen
         update=await asyncio.wait_for(perform_step(tour,store,provider),30)
     except asyncio.TimeoutError:
         update={'status':'uncertain','message':'A provider timed out. This step will not be charged again automatically; owner review is required.'}
-    except Exception:
+    except Exception as error:
+        step=tour.get('next_step',0);photos=len(tour.get('context',{}).get('photos',[]))
+        stage='photo' if step<photos else 'script' if step==photos else 'speech-or-storage'
+        logging.getLogger(__name__).warning('memorycast_step_failed stage=%s exception=%s',stage,type(error).__name__)
         # Never echo private prose, images, keys or raw upstream/provider messages.
         update={'status':'failed','message':'MemoryCast could not finish this step. Saved audio is retained; no automatic paid retry.'}
     result=await store.tour_rpc('mc_finish',{'p_user':user,'p_id':str(tour_id),'p_lease':lease,'p_update':update})

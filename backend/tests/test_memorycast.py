@@ -16,7 +16,7 @@ from backend.world_accounts import get_accounts
 from backend.memorycast import get_tour_provider
 from backend.memorycast_store import TourStore,get_tour_store
 from backend.memorycast_schema import context_for,fingerprint,TourDraft,render_tour
-from backend.memorycast_provider import TourProvider,audio_duration
+from backend.memorycast_provider import TourProvider,audio_duration,normalize_wav
 
 A='11111111-1111-4111-8111-111111111111';B='22222222-2222-4222-8222-222222222222';M='33333333-3333-4333-8333-333333333333'
 def memory():return {'id':M,'title':'Rain at the window','story':'I listened to the rain by the wooden desk.','mood':'Nostalgic','photos':[],'scene':{'objects':[{'id':'desk-1','type':'desk','position':[1,0,-2],'memory':'The wooden desk by the window.'}]},'world':{'id':'owned-world'}}
@@ -68,6 +68,14 @@ class Providers(unittest.IsolatedAsyncioTestCase):
         pipeline=SimpleNamespace(openai=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),settings=SimpleNamespace(openai_model='existing-vision-model'))
         result=await TourProvider(pipeline).vision(b'photo','image/png')
         self.assertIn('red synthetic',result);self.assertEqual(create.call_args.kwargs['model'],'existing-vision-model')
+    async def test_streamed_wav_lengths_are_finalized_before_private_upload(self):
+        streamed=bytearray(wav());streamed[4:8]=b'\xff'*4;streamed[40:44]=b'\xff'*4
+        speech=AsyncMock(return_value=SimpleNamespace(content=bytes(streamed)))
+        pipeline=SimpleNamespace(openai=SimpleNamespace(audio=SimpleNamespace(speech=SimpleNamespace(create=speech))))
+        data,duration=await TourProvider(pipeline).speech('Synthetic test.','en')
+        self.assertEqual(duration,1);self.assertEqual(data,wav())
+        self.assertEqual(audio_duration(bytes(streamed)),1)
+        with self.assertRaises(ValueError):normalize_wav(bytes(streamed)[:-1])
     async def test_openai_voice_returns_playable_wav_without_transcription(self):
         speech=AsyncMock(return_value=SimpleNamespace(content=wav()));pipeline=SimpleNamespace(openai=SimpleNamespace(audio=SimpleNamespace(speech=SimpleNamespace(create=speech))),deepseek=object())
         data,duration=await TourProvider(pipeline).speech('A real journal excerpt.','en');self.assertEqual(duration,1);self.assertEqual(data,wav())

@@ -36,11 +36,43 @@ class TourProvider:
         response=await self.pipeline.openai.audio.speech.create(model='gpt-4o-mini-tts',voice='coral',input=text,
           instructions='Read the supplied words exactly, in a natural, warm, gently reflective voice. Use unhurried pauses. Language: '+language,
           response_format='wav',timeout=18)
-        data=response.content
+        data=normalize_wav(response.content)
         return data,audio_duration(data)
+
+def normalize_wav(data):
+    """Finalize unknown RIFF/data lengths from a bounded, completed PCM response.
+
+    Streaming WAV producers cannot know the file size when writing the header.
+    Only the explicit 0xffffffff sentinel is repaired; truncated known lengths
+    and incomplete PCM frames still fail validation.
+    """
+    if not isinstance(data,bytes) or not 44<len(data)<=8*1024*1024:
+        raise ValueError('Invalid narration audio')
+    if data[:4]!=b'RIFF' or data[8:12]!=b'WAVE':
+        raise ValueError('Invalid narration container')
+    result=bytearray(data);offset=12;alignment=None;found=False
+    while offset+8<=len(data):
+        kind=data[offset:offset+4];size=int.from_bytes(data[offset+4:offset+8],'little');start=offset+8
+        if kind==b'fmt ':
+            if size<16 or start+size>len(data):raise ValueError('Invalid narration format')
+            alignment=int.from_bytes(data[start+12:start+14],'little')
+        if kind==b'data':
+            if not alignment:raise ValueError('Missing narration format')
+            actual=len(data)-start
+            if size==0xffffffff:
+                if actual<=0 or actual%alignment:raise ValueError('Incomplete narration frame')
+                result[offset+4:offset+8]=actual.to_bytes(4,'little')
+            elif size>actual:raise ValueError('Truncated narration')
+            found=True;break
+        if size==0xffffffff or start+size>len(data):raise ValueError('Invalid narration chunk')
+        offset=start+size+(size%2)
+    if not found:raise ValueError('Missing narration samples')
+    if data[4:8]==b'\xff'*4:result[4:8]=(len(data)-8).to_bytes(4,'little')
+    return bytes(result)
 
 def audio_duration(data):
     if not isinstance(data,bytes) or not 44<len(data)<=8*1024*1024:raise ValueError('Invalid narration audio')
+    data=normalize_wav(data)
     with wave.open(io.BytesIO(data),'rb') as audio:
         rate=audio.getframerate()
         if not 8000<=rate<=48000:raise ValueError('Invalid narration sample rate')
