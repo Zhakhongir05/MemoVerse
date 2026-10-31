@@ -18,7 +18,8 @@ test('one completed world prepares one saved podcast; headphones replay without 
  await page.goto('/');await page.getByRole('button',{name:'Explore Memories',exact:true}).click();await page.getByRole('button',{name:'＋ New Memory',exact:true}).click();
  await page.locator('#mj-title').fill('Podcast browser test');await page.locator('#mj-story').fill('I remember reading beside the red chair.');await page.locator('#mj-photos').setInputFiles({name:'test.png',mimeType:'image/png',buffer:png});
  await page.getByRole('button',{name:'Save journal entry ↗',exact:true}).click();expect(creates).toBe(0);
- await page.getByRole('button',{name:'Create world + podcast',exact:true}).click();
+ await page.getByRole('button',{name:'← Back to My Journal',exact:true}).click();
+ await page.getByRole('button',{name:'Create 3D world',exact:true}).click();
  await expect.poll(()=>steps).toBe(3);expect(creates).toBe(1);
  await expect(page.getByRole('region',{name:'Immersive memory exploration'})).toBeVisible();
  await expect(page.locator('[data-world-state="ready"]')).toBeVisible();
