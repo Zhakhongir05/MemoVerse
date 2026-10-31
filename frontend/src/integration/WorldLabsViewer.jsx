@@ -8,6 +8,7 @@ import { existingWorld } from './existingWorld.js';
 import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, parseEnhancementsForWorld } from '../enhancements/schema.js';
+import { requestEnhancements, toProposal } from '../enhancements/api.js';
 
 function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
@@ -79,6 +80,34 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   // oxlint-disable-next-line react/set-state-in-effect
   setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
   setSelectedEnhancement(null);
+ },[enhancementResponse]);
+ // Ask the backend to reissue placements for the mounted world. The demo
+ // objects render immediately and are only replaced once a valid manifest
+ // arrives, so a slow or missing backend never empties the room.
+ useEffect(()=>{
+  const controller=new AbortController();let active=true;
+  const demo=readEnhancements(enhancementResponse).enhancements;
+  requestEnhancements({
+   worldId:existingWorld.id,
+   story:'A quiet bedroom remembered at dusk.',
+   proposals:demo.map(toProposal),
+  },{signal:controller.signal})
+   .then(payload=>{
+    if(!active)return;
+    const next=readEnhancements(payload);
+    if(next.error||next.enhancements.length===0){
+     console.info('[MemoVerse] Backend sent no usable placements; keeping current objects.',next.error||`source=${payload.source} fallback=${payload.fallback}`);
+     return;
+    }
+    console.info(`[MemoVerse] Loaded ${next.enhancements.length} placements (source=${payload.source}, fallback=${payload.fallback}).`);
+    setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
+    setSelectedEnhancement(null);
+   })
+   .catch(error=>{
+    if(error.name==='AbortError'||!active)return;
+    console.info('[MemoVerse] Enhancement backend unavailable; keeping current objects.',error.message);
+   });
+  return ()=>{active=false;controller.abort();};
  },[enhancementResponse]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
  function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform}:e)}));}

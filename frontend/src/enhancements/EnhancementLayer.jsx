@@ -266,20 +266,23 @@ function EnhancementModel({
     }
   }, [hovered, calibrating])
 
-  // Drop floor/ceiling pieces onto the room the collider describes. Runs once
-  // per loaded collider; later calibration moves are kept because the guard
-  // stops the effect from re-running for the same mesh.
+  // Drop floor/ceiling pieces onto the room the collider describes. Keyed by
+  // collider + surface footprint, so a manifest that arrives after the collider
+  // still snaps, while our own y-only grounding update does not re-trigger.
+  const snapKey = collider
+    ? `${collider.uuid}:${enhancement.anchor}:${enhancement.position[0]}:${enhancement.position[2]}`
+    : null
   useEffect(() => {
     if (!collider || enhancement.anchor === 'none') return
-    if (snappedFor.current === collider) return
-    snappedFor.current = collider
+    if (snappedFor.current === snapKey) return
+    snappedFor.current = snapKey
     collider.updateWorldMatrix(true, true)
     const y = surfaceYAt(collider, enhancement.position, enhancement.anchor)
     if (y === null) return
     const rounded = Math.round(y * 1000) / 1000
     console.info(`[MemoVerse] ${enhancement.id} anchored to ${enhancement.anchor} at y=${rounded} (was ${enhancement.position[1]})`)
     if (Math.abs(rounded - enhancement.position[1]) > 0.002) onGround?.(enhancement.id, rounded)
-  }, [collider, enhancement.anchor, enhancement.id, enhancement.position, onGround])
+  }, [collider, enhancement.anchor, enhancement.id, enhancement.position, onGround, snapKey])
 
   const commitTransform = () => {
     const object = group.current
