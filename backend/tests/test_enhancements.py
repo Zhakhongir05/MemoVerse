@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from backend.main import app
 from backend.agent import ScenePipeline,Settings
-from backend.enhancements import Enhancement, EnhancementContext, EnhancementManifest, Calibration, CATALOG, manifest, raw_capture_to_render
+from backend.enhancements import Enhancement, EnhancementContext, EnhancementManifest, Calibration, CATALOG, PERSON_TERMS, manifest, raw_capture_to_render, sanitize_ai_memory
 
 WORLD='4fad570a-957c-43a7-b7c9-150945606413'
 def item(**changes):
@@ -79,6 +79,32 @@ class EnhancementTests(unittest.TestCase):
             app.state.pipeline=ScenePipeline(Settings(demo_mode=True))
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())})
             self.assertEqual(r.json()['enhancements'],[]);self.assertTrue(r.json()['fallback'])
+
+    def test_ai_memory_never_mentions_people(self):
+        for text,expected in [
+            ('A stool on which the boy is sitting.',''),
+            ('A wooden stool beside the island. The boy sits on it.','A wooden stool beside the island.'),
+            ('A basket near her chair.',''),
+            ('A pendant light above the island.','A pendant light above the island.'),
+        ]:
+            self.assertEqual(sanitize_ai_memory(text),expected)
+        c=EnhancementContext.model_validate(context())
+        # AI memory is cleaned; a user's own words are never rewritten.
+        self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'A stool on which the boy is sitting.'})],'ai').enhancements[0].memory,'')
+        self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'My grandfather sat here.'})],'user').enhancements[0].memory,'My grandfather sat here.')
+
+    def test_endpoint_strips_people_from_ai_memory(self):
+        analysis=dict(objects=[],spatial_layout='A stool beside an island',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
+        plan={'enhancements':[{**item(),'memory':'A stool on which the boy sits at the island.'}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            memory=r.json()['enhancements'][0]['memory']
+            self.assertEqual(memory,'');self.assertIsNone(PERSON_TERMS.search(memory))
 
     def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
         analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
