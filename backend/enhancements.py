@@ -274,7 +274,9 @@ def parse_plan(result,limit=20,stats=None):
     data=completion_payload(result)
     raw=data.get('enhancements')
     if not isinstance(raw,list):raise PipelineFailure('invalid_model_output')
-    if stats is not None:stats['plan_raw']=len(raw)
+    if stats is not None:
+        stats['plan_raw']=len(raw)
+        stats['plan_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
     kept={}
     for item in raw:
         try:placement=Enhancement.model_validate(canonical_placement(item))
