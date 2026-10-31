@@ -5,6 +5,12 @@ from fastapi import HTTPException
 from .world_accounts import SupabaseWorlds,supabase_headers
 
 class TourStore(SupabaseWorlds):
+    def upstream_error(self,path,response):
+        if path.startswith('/rest/v1/rpc/mc_'):
+            code='memorycast_schema_unavailable' if response.status_code==404 else 'memorycast_storage_unavailable'
+            message='Podcast database functions are unavailable. Ask the owner to verify the MemoryCast migration and schema cache.' if response.status_code==404 else 'Podcast storage is temporarily unavailable. Retry loading your saved tour.'
+            raise HTTPException(503,{'code':code,'message':message})
+
     async def journal(self,user_id,memory_id):
         query=urlencode({'id':'eq.'+memory_id,'user_id':'eq.'+user_id,'deleted_at':'is.null','select':'id,title,story,mood,photos,scene,world','limit':'1'})
         result=await self.request('/rest/v1/journal_entries?'+query)

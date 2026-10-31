@@ -22,6 +22,8 @@ class SupabaseWorlds:
         self.key=os.getenv('SUPABASE_SERVICE_ROLE_KEY','')
         if not self.url.startswith('https://') or not self.key:raise unavailable()
         self.client=client
+    def upstream_error(self,path,response):
+        pass
     async def request(self,path,*,token=None,body=None):
         headers=supabase_headers(self.key,token)
         try:
@@ -31,6 +33,7 @@ class SupabaseWorlds:
                 async with httpx.AsyncClient(timeout=8,follow_redirects=False) as client:
                     response=await client.request('POST' if body is not None else 'GET',self.url+path,headers=headers,json=body)
             if token and response.status_code in (401,403):raise HTTPException(401,'Please sign in with your existing account again.')
+            if not response.is_success:self.upstream_error(path,response)
             response.raise_for_status();return response.json()
         except (httpx.HTTPError,ValueError):raise unavailable() from None
     async def user(self,token):
