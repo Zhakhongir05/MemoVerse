@@ -84,6 +84,7 @@ export function formatMemoryDate(date, options = { month: 'long', day: 'numeric'
 }
 
 export function journeySteps(entry) {
+  if (entry.world?.guidedTour?.chapters?.length) return entry.world.guidedTour.chapters.map((chapter,index)=>({id:chapter.id,title:['Enter the memory','Explore meaningful objects','Reflect on the memory'][index]||'Saved memory',text:chapter.narration,photoIndex:null,cameraPose:null,narrationUrl:null}))
   const paragraphs = entry.story.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean)
   const count = Math.max(1, paragraphs.length, entry.photos.length)
   return Array.from({ length: count }, (_, index) => ({

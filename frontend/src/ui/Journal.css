@@ -49,3 +49,10 @@
 .mj-photo-plan .mj-photo-plan-limit{color:#ffc7b7}
 
 .mj-plan-banner{margin:12px auto 24px;padding:16px 22px;max-width:1160px;border:1px solid rgba(222,184,121,.2);border-radius:16px;background:rgba(26,24,35,.55);color:#eee1cf}.mj-plan-banner strong{margin-right:18px}.mj-plan-banner p{margin:8px 0 0;font-size:12px;color:#bdb2a6}
+
+/* Journal-first controls: writing, saved worlds, and generated narration. */
+.mj-podcast{margin:24px 0;padding:24px;border:1px solid #c6a99444;border-radius:20px}
+.mj-podcast h2{margin-top:0}.mj-podcast audio{width:100%;margin:12px 0}
+.mj-podcast button,.mj-dictation button{padding:10px 16px;border:1px solid #c6a99466;border-radius:10px;background:#392c25;color:#f9eadd;cursor:pointer;margin:4px 8px 4px 0}
+.mj-podcast button:disabled,.mj-dictation button:disabled{opacity:.55;cursor:default}
+.mj-dictation p{font-size:.85rem;line-height:1.5;opacity:.8}

@@ -3,7 +3,7 @@ import ScenePreview from './ui/ScenePreview'
 import AuthGate from './ui/AuthGate'
 const Journal=lazy(()=>import('./ui/Journal'))
 import { lazy,Suspense,useState } from 'react'
-import JournalWorld from './integration/JournalWorld.jsx'
+import JournalWorld from './integration/JournalWorldViewer.jsx'
 
 function MemoryExperience({ user, signOut, onSignIn, checking, initialScreen, guestAccess }) {
   const [journalOpen, setJournalOpen] = useState(initialScreen === 'journal')

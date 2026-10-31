@@ -14,7 +14,7 @@ export async function worldRequest(path,options={}) {
  const job=await worldFetch(path,options);
  if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(job.job_id)||!['pending','submitting','succeeded',...terminal].includes(job.status))throw new Error('Invalid world job response.');
  if(job.status==='succeeded'&&(!job.world?.id||!['splatUrl','fullResUrl','colliderUrl',...['thumbnailUrl','panoramaUrl'].filter(k=>job.world[k]!=null)].every(k=>{
-  try{const u=new URL(job.world[k]);return u.protocol==='https:'&&!u.username&&!u.password&&(u.hostname==='worldlabs.ai'||u.hostname.endsWith('.worldlabs.ai'));}catch{return false;}
+  try{const u=new URL(job.world[k]);return u.protocol==='https:'&&!u.username&&!u.password&&(u.hostname==='worldlabs.ai'||u.hostname.endsWith('.worldlabs.ai')||(import.meta.env?.VITE_SUPABASE_URL && u.origin===new URL(import.meta.env.VITE_SUPABASE_URL).origin && u.pathname.startsWith('/storage/v1/object/sign/memory-worlds/')));}catch{return false;}
  })))throw new Error('World result is missing valid assets.');
  return job;
 }
