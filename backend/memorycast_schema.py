@@ -161,19 +161,27 @@ def verbatim_tour(context):
     def photo_sentence(bit):
         bit=bit[:1].lower()+bit[1:]
         return ('In the photograph, '+bit+'.') if english else ('사진 속에는 '+bit+'이(가) 있습니다.')
-    pool=[]
-    if title:pool.append(title+'.')
-    pool+= [beat if beat.endswith(('.','!','?','…')) else beat+'.' for beat in beats]
-    pool+= [photo_sentence(bit) for bit in bits]
-    pool=pool or [lines[0]]
-    closing=(title+' stays yours to return to, in your own words and your own time.') if english else (title+'은(는) 당신의 말과 시간 속에, 언제든 다시 돌아올 수 있습니다.')
-    if not title:closing=lines[2]
-    chunks=[[],[],[]]
-    for index,sentence in enumerate(pool[:9]):chunks[index%3].append(sentence)
+    def title_sentence():
+        if len(title)<3:return ''
+        return ('You return to '+title+'.') if english else (title+', 그 순간으로 돌아갑니다.')
+    opening=title_sentence()
+    closing=(title+' stays yours to return to, in your own words and your own time.') if english and len(title)>=3 else ''
+    if not closing:closing=lines[2]
+    spoken=[[],[],[]]
+    if opening:spoken[0].append(opening)
+    # Story beats first: the listener's own memory outranks the photograph.
+    for index,beat in enumerate(beats[:3]):
+        sentence=beat if beat.endswith(('.','!','?','…')) else beat+'.'
+        spoken[index%3].append(sentence)
+    # One visible detail per chapter, never an inventory.
+    for index,bit in enumerate(bits[:3]):spoken[index].append(photo_sentence(bit))
+    spoken[2].append(closing)
+    bridge=(title+', still part of the memory you keep.') if english and len(title)>=3 else ((title+', 당신이 간직한 기억의 일부입니다.') if len(title)>=3 else lines[1])
     chapters=[]
-    for index,chunk in enumerate(chunks):
+    for index,chunk in enumerate(spoken):
+        if not chunk:chunk=[bridge]
         narration=' '.join(chunk).strip()
-        if index==2:narration=(narration+' '+closing).strip()
+        if english:narration=narration[:1].upper()+narration[1:]
         # Keep spoken text long enough for the audio contract without cutting words.
         if len(narration)<40:narration=(narration+' '+lines[index%3]).strip()
         if len(narration)>2400:narration=narration[:2400].rsplit(' ',1)[0]
