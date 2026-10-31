@@ -1,4 +1,5 @@
 import { Component, lazy, Suspense } from 'react'
+import './ViewerChrome.css'
 
 // The UI branch can deploy before the teammate's scene branch is merged.
 // Vite resolves only files actually present in the checkout at build time.
@@ -31,9 +32,9 @@ export default function ScenePreview(props) {
     <h2>Your 3D world is waiting.</h2>
     <p>This world is still taking shape. Your story and photographs are ready to revisit.</p>
   </div>
-  return <SceneBoundary>
+  return <div className="mv-clean-viewer"><SceneBoundary>
     <Suspense fallback={<div className="mv-scene-fallback" role="status">Opening your memory world…</div>}>
       <Scene {...props} />
     </Suspense>
-  </SceneBoundary>
+  </SceneBoundary></div>
 }
