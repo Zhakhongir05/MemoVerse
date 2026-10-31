@@ -76,3 +76,19 @@ class EnhancementTests(unittest.TestCase):
             app.state.pipeline=ScenePipeline(Settings(demo_mode=True))
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())})
             self.assertEqual(r.json()['enhancements'],[]);self.assertTrue(r.json()['fallback'])
+
+    def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
+        analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(analysis)))))
+        bed=item();chair={**item(),'id':'chair-1','type':'chair','assetId':'chair-modern-01'}
+        planner=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=[completion({'enhancements':[bed]}),completion({'enhancements':[chair]})]))))
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,planner)
+            outputs=[]
+            for color in ['red','blue']:
+                b=io.BytesIO();Image.new('RGB',(32,32),color).save(b,format='PNG')
+                r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+                self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+                outputs.append(r.json()['enhancements'][0]['type'])
+            photos=[call.kwargs['messages'][1]['content'][0]['image_url']['url'] for call in vision.chat.completions.create.await_args_list]
+            self.assertNotEqual(photos[0],photos[1]);self.assertEqual(outputs,['bed','chair'])

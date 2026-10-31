@@ -1,6 +1,7 @@
-/* The app owns its journal/editor and toolbar. Hide duplicate legacy DOM panels
-   from the embedded viewer without changing splats, furniture, or camera code. */
+/* The app owns its journal/editor and toolbar. Keep those legacy panels hidden,
+   but retain furniture status, errors, stories and calibration in the viewer. */
 .mv-clean-viewer{width:100%;height:100%;position:relative}
 .mv-clean-viewer .world-tools,
-.mv-clean-viewer .sense-controls,
-.mv-clean-viewer .enhancement-panel{display:none!important}
+.mv-clean-viewer .sense-controls{display:none!important}
+.mv-clean-viewer .enhancement-panel{display:block;bottom:110px;max-height:45%}
+@media(max-width:720px){.mv-clean-viewer .enhancement-panel{bottom:105px;max-height:32%}}

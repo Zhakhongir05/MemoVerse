@@ -8,7 +8,8 @@ import { existingWorld } from './existingWorld.js';
 import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld } from '../enhancements/schema.js';
-import { requestEnhancements, toProposal } from '../enhancements/api.js';
+import { loadFurniture } from '../enhancements/generation.js';
+import { saveManifest } from '../enhancements/cache.js';
 
 function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
@@ -78,11 +79,12 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT_RESPONSE, mood: externalMood, imageUrl = '', scene = null }){
- const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
-  const initial=readEnhancements(enhancementResponse);
-  return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
- });
+export default function WorldLabsViewer({ enhancementResponse = null, mood: externalMood, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner }){
+ const [{list:enhancements,error:enhancementError},setEnhancementState]=useState({list:[],baseline:[],error:''});
+ const [enhancementStatus,setEnhancementStatus]=useState('');
+ const [enhancementSource,setEnhancementSource]=useState('');
+ const [cacheInfo,setCacheInfo]=useState(null);
+ const [retryEnhancements,setRetryEnhancements]=useState(0);
  const [quality,setQuality]=useState('balanced');
  const [status,setStatus]=useState('Opening your saved memory world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
@@ -94,68 +96,64 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  const [selectedEnhancement,setSelectedEnhancement]=useState(null);
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
  const [colliderMesh,setColliderMesh]=useState(null);
- const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null),needsFit=useRef(false),roomRef=useRef(null);
+ const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null),needsFit=useRef(false),roomRef=useRef(null),furnitureRequest=useRef(null);
  const selectedAnchor=anchors.find(a=>a.id===selected);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
+ const story=savedMemory?.story??scene?.description??'';
+ const savedMemoryId=savedMemory?.id, savedMemoryOwner=savedMemory?.owner;
  useEffect(()=>{
-  const next=readEnhancements(enhancementResponse);
+  const controller=new AbortController();let active=true;furnitureRequest.current=controller;
+  needsFit.current=false;
+  // Loading external photo/cache/provider state invalidates the prior overlay.
   // oxlint-disable-next-line react/set-state-in-effect
-  setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
-  setSelectedEnhancement(null);
- },[enhancementResponse]);
- // Ask the backend for placements of the mounted world. With an uploaded photo
- // it runs the AI path (objects + locations from the image); without one it
- // reissues the current placements as user proposals. Demo objects render
- // immediately and are replaced only by a validated manifest, so a slow or
- // missing backend never empties the room.
- const story=scene?.description??'';
- useEffect(()=>{
-  const controller=new AbortController();let active=true;
+  setCacheInfo(null);setEnhancementSource('');setSelectedEnhancement(null);
+  setEnhancementState({list:[],baseline:[],error:''});
+  setEnhancementStatus('Loading furniture…');
   async function load(){
-   const demo=readEnhancements(enhancementResponse).enhancements;
-   let photo=null;
-   if(imageUrl){
-    try{
-     const source=await fetch(imageUrl,{signal:controller.signal});
-     if(!source.ok)throw new Error(`photo read failed (${source.status})`);
-     const blob=await source.blob();
-     photo=new File([blob],'memory-photo',{type:blob.type||'image/jpeg'});
-    }catch(error){
-     if(error.name==='AbortError'||!active)return;
-     console.info('[MemoVerse] Uploaded photo could not be read; keeping current objects.',error.message);
-     return;
-    }
-   }
    try{
-    const payload=await requestEnhancements({
-     worldId:existingWorld.id,
-     story,
-     proposals:photo?[]:demo.map(toProposal),
-     photo,
-    },{signal:controller.signal});
-    if(!active)return;
-    const next=readEnhancements(payload);
-    if(next.error||next.enhancements.length===0){
-     console.info('[MemoVerse] Backend sent no usable placements; keeping current objects.',next.error||`source=${payload.source} fallback=${payload.fallback}`);
-     return;
+    if(enhancementResponse){
+     const next=readEnhancements(enhancementResponse);
+     if(next.error)throw new Error('The supplied furniture manifest is invalid.');
+     if(!active||controller.signal.aborted)return;
+     setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
+     setEnhancementSource('provided');setEnhancementStatus('Supplied placements · not newly AI-generated.');return;
     }
-    let placements=next.enhancements;
-    if(payload.source==='ai'){
+    const result=await loadFurniture({imageUrl,story,memory:{id:savedMemoryId,owner:savedMemoryOwner},owner:enhancementOwner,worldId:existingWorld.id,signal:controller.signal});
+    if(!active||controller.signal.aborted)return;
+    let placements=result.list;
+    if(result.source==='ai'){
      const room=roomRef.current;
      if(room)placements=settleInsideRoom(room,fitEnhancementsToBounds(placements,new Box3().setFromObject(room)));
      else needsFit.current=true;
     }
-    console.info(`[MemoVerse] Loaded ${placements.length} placements (source=${payload.source}, fallback=${payload.fallback}).`);
-    setEnhancementState({list:placements,baseline:placements,error:''});
-    setSelectedEnhancement(null);
+    setEnhancementState({list:placements,baseline:placements,error:result.warning});
+    setCacheInfo({identity:result.identity,payload:result.payload});
+    setEnhancementSource(result.source);
+    setEnhancementStatus(result.source==='saved'?'Saved placements restored from this device.':'AI furniture · approximate placements; review alignment.');
    }catch(error){
     if(error.name==='AbortError'||!active)return;
-    console.info('[MemoVerse] Enhancement backend unavailable; keeping current objects.',error.message);
+    setEnhancementState({list:[],baseline:[],error:error.message||'Furniture could not be loaded. Please retry.'});
+    setEnhancementStatus('No generated furniture loaded.');
    }
   }
   load();
   return ()=>{active=false;controller.abort();};
- },[enhancementResponse,imageUrl,story]);
+ },[enhancementResponse,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements]);
+ useEffect(()=>{
+  if(!cacheInfo||!['ai','saved'].includes(enhancementSource)||needsFit.current)return;
+  let active=true;
+  saveManifest(cacheInfo.identity,{...cacheInfo.payload,enhancements}).catch(()=>{
+   if(active)setEnhancementState(state=>({...state,error:'Furniture is visible but could not be saved on this device.'}));
+  });
+  return ()=>{active=false;};
+ },[cacheInfo,enhancementSource,enhancements,colliderMesh]);
+ function showSampleFurniture(){
+  furnitureRequest.current?.abort();needsFit.current=false;
+  const next=readEnhancements(DEMO_ENHANCEMENT_RESPONSE);
+  setCacheInfo(null);setEnhancementSource('sample');
+  setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
+  setEnhancementStatus('Sample furniture · predefined for this saved World Labs room, not generated from your photograph.');
+ }
  // Keep the loaded collider available to the in-flight request without making
  // the request re-run when the room finishes loading.
  useEffect(()=>{
@@ -171,7 +169,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   setEnhancementState(state=>({...state,list:fitAll(state.list),baseline:fitAll(state.baseline)}));
  },[colliderMesh]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
- function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform}:e)}));}
+ function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform,anchor:'none'}:e)}));}
  // Collider grounding lands once per world load; write it to the baseline too so
  // "Reset" returns to the grounded placement, not the floating payload guess.
  function groundEnhancement(id,y){setEnhancementState(state=>{
@@ -227,10 +225,13 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
    <button onClick={()=>setJourney(n=>n+1)}>Return to memory</button>
    <button aria-pressed={ambience} onClick={toggleAmbience}>{ambience?'Mute ambience':'Play gentle ambience'}</button>
   </div>
-  {(enhancements.length>0||enhancementError)&&<section className="enhancement-panel" aria-label="Enhanced objects">
+  {<section className="enhancement-panel" aria-label="Enhanced objects">
    <header><div><p className="enhancement-eyebrow">HIGH-DETAIL OVERLAY</p><h2>Enhanced objects</h2></div>
     <button aria-pressed={calibrating} onClick={()=>setCalibrating(value=>!value)}>{calibrating?'Done':'Calibrate'}</button></header>
+   <p role="status">{enhancementStatus}</p>
    {enhancementError&&<p role="alert" className="enhancement-error">{enhancementError}</p>}
+   <button onClick={()=>setRetryEnhancements(value=>value+1)}>Retry furniture</button>
+   <button onClick={showSampleFurniture}>Show sample furniture</button>
    {calibrating&&<div className="enhancement-modes" role="group" aria-label="Transform tool">
     {[['translate','Move'],['rotate','Rotate'],['scale','Scale']].map(([mode,label])=><button key={mode} aria-pressed={transformMode===mode} onClick={()=>setTransformMode(mode)}>{label}</button>)}
     <button onClick={resetEnhancements}>Reset</button>
@@ -242,7 +243,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
     <h3>{ASSET_CATALOG[selectedEnhancementData.assetId]?.label||selectedEnhancementData.type}</h3>
     <p>{selectedEnhancementData.memory||'No memory attached to this object yet.'}</p>
     <p className="enhancement-meta">Placement {selectedEnhancementData.confidence.replace(/-/g,' ')}</p>
-    {calibrating&&<p className="enhancement-hint">Drag the gizmo to move, rotate or scale. Changes stay in this tab.</p>}
+    {calibrating&&<p className="enhancement-hint">Drag the gizmo to move, rotate or scale. Changes are saved on this device when storage is available; cloud sync is not connected.</p>}
     <button onClick={()=>setSelectedEnhancement(null)}>Close</button>
    </article>:<p className="enhancement-hint">Click an object in the room to read its story.</p>}
   </section>}
@@ -260,7 +261,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
    </section>}
    {audioError&&<p role="alert">{audioError}</p>}
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
-   <p className="local-note">Attachments stay in this tab. Reloading or switching modes clears the journal. No uploads or API calls here.</p>
+   <p className="local-note">Anchor attachments stay in this tab. Furniture generation uses your photograph; sample furniture is available separately.</p>
   </details>
  </div></Boundary>;
 }

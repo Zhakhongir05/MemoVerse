@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ENHANCEMENTS_ENDPOINT, requestEnhancements, toProposal } from './api.js'
+import { ENHANCEMENTS_ENDPOINT, enhancementEndpoint, requestEnhancements, toProposal } from './api.js'
 import { DEMO_ENHANCEMENT_RESPONSE, parseEnhancementsForWorld } from './schema.js'
 
 function captureFetch(payload, init = {}) {
@@ -67,7 +67,7 @@ test('throws a readable error for a non-OK response', async () => {
   const { fetchImpl } = captureFetch(null, { ok: false, status: 422, detail: 'Invalid context' })
   await assert.rejects(
     requestEnhancements({ worldId: 'w' }, { fetchImpl }),
-    /Enhancement request failed \(422\): Invalid context/,
+    /photograph or placement request was rejected/,
   )
 })
 
@@ -91,4 +91,26 @@ test('toProposal keeps approved keys and drops renderer-only ones', () => {
   assert.deepEqual(proposal, DEMO_ENHANCEMENT_RESPONSE.enhancements[0])
   assert.equal('model' in proposal, false)
   assert.equal('selected' in proposal, false)
+})
+
+
+test('production defaults same-origin and supports only a safe public HTTPS backend override', async () => {
+  assert.equal(enhancementEndpoint(''), '/api/generate-enhancements')
+  assert.equal(enhancementEndpoint('https://backend.example/'), 'https://backend.example/api/generate-enhancements')
+  assert.equal(enhancementEndpoint('http://127.0.0.1:8000'), 'http://127.0.0.1:8000/api/generate-enhancements')
+  for (const value of ['http://backend.example', 'https://user:key@backend.example', 'https://backend.example?key=secret', 'https://backend.example/path']) assert.throws(() => enhancementEndpoint(value))
+  const { calls, fetchImpl } = captureFetch(DEMO_ENHANCEMENT_RESPONSE)
+  await requestEnhancements({ worldId: 'w' }, { fetchImpl, apiBase: 'https://backend.example' })
+  assert.equal(calls[0].url, 'https://backend.example/api/generate-enhancements')
+})
+
+test('backend failures do not expose raw provider errors or HTML', async () => {
+  const { fetchImpl } = captureFetch(null, { ok: false, status: 502, detail: 'private provider text' })
+  await assert.rejects(requestEnhancements({ worldId: 'w' }, { fetchImpl }), error => !error.message.includes('private') && error.message.includes('502'))
+})
+
+
+test('a provider timeout becomes a visible retryable error, not a silent cancellation', async () => {
+  const fetchImpl = (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
+  await assert.rejects(requestEnhancements({ worldId: 'w' }, { fetchImpl, timeoutMs: 2 }), /timed out/)
 })

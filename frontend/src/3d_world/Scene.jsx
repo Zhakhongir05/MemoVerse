@@ -8,8 +8,8 @@ import './scene.css'
  * pinned until the generation API is wired, but the uploaded photograph is
  * forwarded so the backend can derive overlays for this memory.
  */
-export default function Scene({ mood, imageUrl, scene }) {
+export default function Scene({ mood, imageUrl, scene, memory, enhancementOwner }) {
   return <div className="mv-hybrid-scene">
-    <WorldLabsViewer mood={mood} imageUrl={imageUrl} scene={scene} />
+    <WorldLabsViewer mood={mood} imageUrl={imageUrl} scene={scene} memory={memory} enhancementOwner={enhancementOwner} />
   </div>
 }
