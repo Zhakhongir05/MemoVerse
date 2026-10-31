@@ -9,6 +9,8 @@ import RelivePreparation from './RelivePreparation'
 import GenerationPlans from './GenerationPlans'
 import PhotoPlanInfo from './PhotoPlanInfo'
 import { requestCreditGeneration } from './generationCredits'
+import ArchivedWorldViewer from './ArchivedWorldViewer'
+import SpeechInput from './SpeechInput.jsx'
 
 function useMediaUrl(file) {
   const [value, setValue] = useState({ file: null, url: '' })
@@ -32,7 +34,7 @@ const emptyDraft = () => ({ title: '', date: localDate(), story: '', mood: 'Nost
  * JourneyController can synchronize AI narration/camera poses with activeStep.
  * The built-in guided reading never pretends to drive the 3D camera or AI audio.
  */
-export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment = requestCreditGeneration, onPurchase }) {
+export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer = ArchivedWorldViewer, JourneyController, LegacyStudio, generateEnvironment = requestCreditGeneration, onPurchase }) {
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
   const [view, setView] = useState('journal')
@@ -203,6 +205,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
         <div className="mj-editor-main mj-glass"><label htmlFor="mj-title">Memory title <span>Required</span></label><input id="mj-title" value={draft.title} maxLength={100} onChange={event => change('title', event.target.value)} placeholder="The afternoon that felt like forever" aria-invalid={!!fieldErrors.title} aria-describedby="mj-title-error" /><p id="mj-title-error" className="mj-field-error" role="alert">{fieldErrors.title}</p>
           <div className="mj-editor-date"><label htmlFor="mj-date">When was it?</label><input id="mj-date" type="date" value={draft.date} onChange={event => change('date', event.target.value)} aria-invalid={!!fieldErrors.date} aria-describedby="mj-date-error" /><p id="mj-date-error" className="mj-field-error" role="alert">{fieldErrors.date}</p></div>
           <label htmlFor="mj-story">The story behind it</label><textarea id="mj-story" rows={9} maxLength={12000} value={draft.story} onChange={event => change('story', event.target.value)} placeholder="I still remember the light through the window…" aria-invalid={!!fieldErrors.story} aria-describedby="mj-story-error mj-story-help" /><div id="mj-story-help" className="mj-form-hint">Start with what you can still feel. <span>{draft.story.length}/12000</span></div><p id="mj-story-error" className="mj-field-error" role="alert">{fieldErrors.story}</p>
+          <SpeechInput value={draft.story} onChange={text => change('story', text)} disabled={saving} />
           <fieldset className="mj-moods" id="mj-mood"><legend>How does it feel?</legend>{MOODS.map(mood => <label key={mood} className={draft.mood === mood ? 'mj-chosen' : ''}><input type="radio" name="journal-mood" checked={draft.mood === mood} onChange={() => change('mood', mood)} /><span>{mood}</span></label>)}</fieldset>
         </div>
         <div className="mj-editor-side"><div className="mj-glass mj-photo-panel"><h2>Bring it into focus</h2><p>Choose one JPG, PNG, or WebP photo · Up to 10 MB.</p><PhotoPlanInfo user={user} /><button className="mj-add-photos" type="button" onClick={() => photoInput.current?.click()}>{draft.photos.length ? 'Replace source photo' : '＋ Add source photo'}</button><input id="mj-photos" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { choosePhotos(event.target.files, draft.photos.length ? 0 : null); event.target.value = '' }} aria-label="Choose one source photograph" aria-describedby="mj-photo-error" />

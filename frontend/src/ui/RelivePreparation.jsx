@@ -23,7 +23,8 @@ export default function RelivePreparation({ memory, generateEnvironment, hasWorl
         const account = await getGenerationPlan(user)
         if (controller.signal.aborted) return
         setBalance(remainingCredits(account))
-        if (remainingCredits(account) < 1) { setState('limit-reached'); return }
+        // Let the server recover an existing job even when its reservation used
+        // the last credit. Only the atomic reservation may reject a NEW job.
         const photo = memory.photos[photoIndex]
         const result = await generateEnvironment({ memory, photo, photos: [photo], story: memory.story, signal: controller.signal })
         if (controller.signal.aborted) return

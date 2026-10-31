@@ -9,16 +9,17 @@ import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, parseEnhancementsForWorld } from '../enhancements/schema.js';
 
-function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
+function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quality}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
  useEffect(()=>{
   let active=true, mesh=null;
   onStatus('Loading saved world detail…');
   const spark=new SparkRenderer({renderer:gl,preBlurAmount:0,blurAmount:.3}); scene.add(spark);
-  const splat=new SplatMesh({url:quality==='full'?existingWorld.fullResUrl:existingWorld.splatUrl,lod:false});
+  const splat=new SplatMesh({url:quality==='full'?world.fullResUrl:world.splatUrl,lod:false});
   // Marble raw OpenCV splats -> Three.js. No metric scale is supplied for this draft.
   splat.rotation.x=Math.PI; scene.add(splat);
-  Promise.all([splat.initialized,new GLTFLoader().loadAsync(existingWorld.colliderUrl)]).then(([,gltf])=>{
+  Promise.all([splat.initialized,world.colliderUrl ? new GLTFLoader().loadAsync(world.colliderUrl) : Promise.resolve(null)]).then(([,gltf])=>{
+   if(!gltf){onStatus('Loaded saved world.');return;}
    if(!active){gltf.scene.traverse(o=>{o.geometry?.dispose();});return;}
    mesh=gltf.scene;
    // The collider is exported in the splat's raw capture frame (same as the
@@ -30,7 +31,7 @@ function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
    console.info('World Labs assets loaded', {splats:splat.numSplats,colliderBounds:bounds.min.toArray().concat(bounds.max.toArray())});
   }).catch(()=>{if(active)onStatus('World assets failed to load. Switch to the primitive room to continue.');});
   return ()=>{active=false;scene.remove(spark,splat);splat.dispose();spark.dispose();if(mesh){scene.remove(mesh);mesh.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});}collider.current=null;onCollider?.(null);};
- },[gl,scene,onStatus,onCollider,quality]);
+ },[gl,scene,onStatus,onCollider,quality,world]);
  useEffect(()=>{collider.current?.traverse(o=>{if(o.isMesh)o.material.opacity=wireframe?.5:0;});});
  return loadedCollider?.quality===quality?<primitive object={loadedCollider.mesh} rotation={[Math.PI,0,0]} onDoubleClick={e=>{if(placing){e.stopPropagation();onPlace(e.point.toArray());}}}/>:null;
 }
@@ -51,13 +52,14 @@ function CameraJourney({controls,journey,onDone,ready}) {
   if(reduced||elapsed.current>2.8)onDone();
  });return null;
 }
-function readEnhancements(payload) {
- try { return { enhancements: parseEnhancementsForWorld(payload, existingWorld.id), error: '' }; }
+function readEnhancements(payload, worldId) {
+ if(!payload) return {enhancements:[],error:''};
+ try { return { enhancements: parseEnhancementsForWorld(payload, worldId), error: '' }; }
  catch (error) { console.warn('[MemoVerse] Enhancement response rejected.', error); return { enhancements: [], error: error.message }; }
 }
-export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT_RESPONSE, mood: externalMood }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = world === existingWorld ? DEMO_ENHANCEMENT_RESPONSE : null, onEnhancementsChange, mode, mood: externalMood }){
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
-  const initial=readEnhancements(enhancementResponse);
+  const initial=readEnhancements(enhancementResponse,world.id);
   return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
  });
  const [quality,setQuality]=useState('balanced');
@@ -75,13 +77,18 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  const selectedAnchor=anchors.find(a=>a.id===selected);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
  useEffect(()=>{
-  const next=readEnhancements(enhancementResponse);
+  const next=readEnhancements(enhancementResponse,world.id);
   // oxlint-disable-next-line react/set-state-in-effect
   setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
   setSelectedEnhancement(null);
- },[enhancementResponse]);
+ },[enhancementResponse,world.id]);
+ useEffect(()=>{if(mode) setCalibrating(mode==='edit');},[mode]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
- function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform}:e)}));}
+ function updateEnhancement(id,transform){
+  const list=enhancements.map(e=>e.id===id?{...e,...transform,anchor:'none'}:e);
+  setEnhancementState(state=>({...state,list}));
+  onEnhancementsChange?.({worldId:world.id,enhancements:list});
+ }
  // Collider grounding lands once per world load; write it to the baseline too so
  // "Reset" returns to the grounded placement, not the floating payload guess.
  function groundEnhancement(id,y){setEnhancementState(state=>{
@@ -124,7 +131,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  return <Boundary><div className={`world-host immersive-world ${mood}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
-   <Assets quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
+   <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
    {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>

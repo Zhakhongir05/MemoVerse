@@ -84,6 +84,12 @@ export function formatMemoryDate(date, options = { month: 'long', day: 'numeric'
 }
 
 export function journeySteps(entry) {
+  const chapters = entry.world?.guidedTour?.chapters
+  if (Array.isArray(chapters) && chapters.length) return chapters.map((chapter, index) => ({
+    ...chapter, id: chapter.id || `${entry.id}:chapter:${index}`,
+    title: chapter.title || `Moment ${index + 1}`, text: chapter.text || '',
+    photoIndex: Number.isInteger(chapter.photoIndex) && chapter.photoIndex >= 0 && chapter.photoIndex < entry.photos.length ? chapter.photoIndex : null,
+  }))
   const paragraphs = entry.story.split(/\n\s*\n/).map(part => part.trim()).filter(Boolean)
   const count = Math.max(1, paragraphs.length, entry.photos.length)
   return Array.from({ length: count }, (_, index) => ({

@@ -37,14 +37,14 @@ export async function uploadJournalEntry(owner, entry, client = supabase) {
   const { data, error } = await client.from('journal_entries').upsert({
     id: entry.id, user_id: owner, title: entry.title, memory_date: entry.date,
     story: entry.story, mood: entry.mood, photos, audio,
-    scene: entry.scene || null, world: entry.world || null,
+    scene: entry.scene || null, world: entry.world?.schemaVersion === 1 ? null : entry.world || null,
     created_at: entry.createdAt, updated_at: entry.updatedAt,
     deleted_at: null,
   }, { onConflict: 'id' }).select(columns).single()
   if (error) throw error
   // Do not delete uploaded files on a transport error: the DB request may have
   // committed. Nor remove old revisions another device may still reference.
-  return { ...entry, syncState: 'synced', cloudUpdatedAt: data.updated_at, cloudMedia: { photos, audio } }
+  return { ...entry, world: data.world, syncState: 'synced', cloudUpdatedAt: data.updated_at, cloudMedia: { photos, audio } }
 }
 
 export async function syncDeletedEntry(owner, entry, client = supabase) {

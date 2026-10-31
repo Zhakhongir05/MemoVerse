@@ -28,5 +28,23 @@ export async function requestCreditGeneration({ memory, photo, photos, story, si
     throw new Error(message)
   }
   if (data?.error) throw new Error(data.error)
+  if (data?.pending && data.requestId) return waitForGeneration(data.requestId, signal, client)
   return data
+}
+
+export async function waitForGeneration(requestId, signal, client = supabase) {
+  // Read-only polling; retries and reopening never repeat a provider POST.
+  for (let attempt = 0; attempt < 180; attempt++) {
+    signal?.throwIfAborted()
+    const { data: job, error } = await client.from('generation_requests').select('state,status,result').eq('id', requestId).single()
+    if (error) throw new Error('Could not check your saved generation. Reopen this memory later; do not regenerate it.')
+    if (job.state === 'succeeded') return job.result
+    if (job.state === 'failed') throw new Error('Generation failed. Check Plans for your restored allowance before trying a different source.')
+    await new Promise((resolve, reject) => {
+      const abort = () => { clearTimeout(timer); reject(signal.reason) }
+      const timer = setTimeout(() => { signal?.removeEventListener('abort', abort); resolve() }, 5000)
+      signal?.addEventListener('abort', abort, { once: true })
+    })
+  }
+  throw new Error('Your world is still being prepared or recovered. Reopen this memory later; another generation will not be started.')
 }
