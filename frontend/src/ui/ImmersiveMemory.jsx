@@ -8,7 +8,6 @@ export default function ImmersiveMemory({ user, memory, SceneRenderer, WorldView
   const [panel, setPanel] = useState(initialMode === 'guided' ? 'journey' : null)
   const [mood, setMood] = useState(memory.mood)
   const [cameraReset, setCameraReset] = useState(0)
-  const [previewType, setPreviewType] = useState('symbolic')
   const [fullscreen, setFullscreen] = useState(false)
   const [fullscreenError, setFullscreenError] = useState('')
   const frame = useRef(null)
@@ -76,7 +75,6 @@ export default function ImmersiveMemory({ user, memory, SceneRenderer, WorldView
     showAnchors: false, showMarkers: false,
     cameraResetKey: cameraReset,
     memorycastCue,
-    embedded: true, previewType,
   }
 
   useEffect(() => {
@@ -99,7 +97,6 @@ export default function ImmersiveMemory({ user, memory, SceneRenderer, WorldView
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">
         <Tool label="SenseShift" icon="◐" active={panel === 'mood'} onClick={event => openPanel('mood', event)} disabled={saving} />
-        {!hasWorld && SceneRenderer && <Tool label="Preview type" icon="▧" active={panel === 'preview'} onClick={event => openPanel('preview', event)} disabled={saving} />}
         <Tool label="Guided tour" icon="✧" active={panel === 'journey'} onClick={event => openPanel('journey', event)} disabled={saving} />
         <Tool label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} icon="⛶" active={fullscreen} onClick={toggleFullscreen} />
         <Tool label="Reset camera" icon="↺" onClick={() => { memorycastCue?.onCancel?.(); setCameraReset(value => value + 1) }} />
@@ -110,9 +107,8 @@ export default function ImmersiveMemory({ user, memory, SceneRenderer, WorldView
       </div>
     </div>
     <aside className={`im-panel ${panel ? 'im-panel-visible' : ''}`} aria-label="Memory controls panel" aria-hidden={!panel} inert={!panel}>
-      {panel && <div className="im-panel-content"><header><div><p className="mj-eyebrow">{panel === 'edit' ? 'MAKE THE MOMENT YOURS' : 'A LITTLE CLOSER TO THEN'}</p><h2 ref={panelHeading} tabIndex={-1}>{({ mood: 'SenseShift', journey: 'A guided journey', preview: 'Preview type', edit: 'Your memory', info: 'About this memory' })[panel]}</h2></div><button className="im-close" aria-label="Close memory panel" disabled={saving} onClick={closePanel}>×</button></header>
+      {panel && <div className="im-panel-content"><header><div><p className="mj-eyebrow">{panel === 'edit' ? 'MAKE THE MOMENT YOURS' : 'A LITTLE CLOSER TO THEN'}</p><h2 ref={panelHeading} tabIndex={-1}>{({ mood: 'SenseShift', journey: 'A guided journey', edit: 'Your memory', info: 'About this memory' })[panel]}</h2></div><button className="im-close" aria-label="Close memory panel" disabled={saving} onClick={closePanel}>×</button></header>
         {panel === 'mood' && <><p className="im-panel-lede">Set the atmosphere for this visit.</p><fieldset className="im-mood-options"><legend className="mj-sr-only">Scene atmosphere</legend>{['Nostalgic', 'Joyful', 'Melancholic'].map(value => <label key={value} className={mood === value ? 'im-chosen' : ''}><input type="radio" name="immersive-mood" checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</fieldset></>}
-        {panel === 'preview' && <><p className="im-panel-lede">Choose how to revisit the symbolic scene.</p><fieldset className="im-mood-options"><legend>Preview type</legend>{[['symbolic','Symbolic objects'],['diorama','Grounded diorama'],['photo','Photo depth · not reconstruction']].map(([value,label]) => <label key={value} className={previewType === value ? 'im-chosen' : ''}><input type="radio" name="memory-preview" checked={previewType === value} onChange={() => { setPreviewType(value); closePanel() }} /><span>{label}</span></label>)}</fieldset></>}
         {panel === 'journey' && !demo && <MemoryCast user={user} memory={memory} onCameraCue={onMemorycastCue} />}
         {panel === 'journey' && step && <><p className="im-step-count">MOMENT {activeStep + 1} OF {steps.length}</p><h3>{step.title}</h3>{step.photoIndex !== null && <Photo file={memory.photos[step.photoIndex]} alt={`Memory photograph ${step.photoIndex + 1}`} className="im-journey-photo" />}<p className="im-story">{step.text}</p><div className="im-journey-actions"><button className="mj-secondary" disabled={activeStep === 0} onClick={() => onStepChange(activeStep - 1)}>← Previous</button><button className="mj-primary" onClick={() => activeStep + 1 === steps.length ? closePanel() : onStepChange(activeStep + 1)}>{activeStep + 1 === steps.length ? 'Explore freely' : 'Next moment →'}</button></div></>}
         {panel === 'edit' && <>{error && <p className="mj-field-error" role="alert">Your changes could not be saved. Please try again.</p>}{editor}</>}

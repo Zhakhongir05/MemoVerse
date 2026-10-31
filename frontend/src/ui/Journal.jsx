@@ -4,10 +4,8 @@ import { importGuestEntries, syncJournal } from './journalCloud'
 import './Dashboard.css'
 import './Journal.css'
 import MemoryTimeline from './MemoryTimeline'
-import JournalHome from './JournalHome.jsx'
 import ImmersiveMemory from './ImmersiveMemory'
 import MemoryCast from './MemoryCast.jsx'
-import SpeechInput from './SpeechInput.jsx'
 import RelivePreparation from './RelivePreparation'
 import GenerationPlans from './GenerationPlans'
 import PhotoPlanInfo from './PhotoPlanInfo'
@@ -208,7 +206,6 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
         <div className="mj-editor-main mj-glass"><label htmlFor="mj-title">Memory title <span>Required</span></label><input id="mj-title" value={draft.title} maxLength={100} onChange={event => change('title', event.target.value)} placeholder="The afternoon that felt like forever" aria-invalid={!!fieldErrors.title} aria-describedby="mj-title-error" /><p id="mj-title-error" className="mj-field-error" role="alert">{fieldErrors.title}</p>
           <div className="mj-editor-date"><label htmlFor="mj-date">When was it?</label><input id="mj-date" type="date" value={draft.date} onChange={event => change('date', event.target.value)} aria-invalid={!!fieldErrors.date} aria-describedby="mj-date-error" /><p id="mj-date-error" className="mj-field-error" role="alert">{fieldErrors.date}</p></div>
           <label htmlFor="mj-story">The story behind it</label><textarea id="mj-story" rows={9} maxLength={12000} value={draft.story} onChange={event => change('story', event.target.value)} placeholder="I still remember the light through the window…" aria-invalid={!!fieldErrors.story} aria-describedby="mj-story-error mj-story-help" /><div id="mj-story-help" className="mj-form-hint">Start with what you can still feel. <span>{draft.story.length}/12000</span></div><p id="mj-story-error" className="mj-field-error" role="alert">{fieldErrors.story}</p>
-          <SpeechInput value={draft.story} onChange={text => change('story', text)} disabled={saving || syncing} />
           <fieldset className="mj-moods" id="mj-mood"><legend>How does it feel?</legend>{MOODS.map(mood => <label key={mood} className={draft.mood === mood ? 'mj-chosen' : ''}><input type="radio" name="journal-mood" checked={draft.mood === mood} onChange={() => change('mood', mood)} /><span>{mood}</span></label>)}</fieldset>
         </div>
         <div className="mj-editor-side"><div className="mj-glass mj-photo-panel"><h2>Bring it into focus</h2><p>Choose one JPG, PNG, or WebP photo · Up to 10 MB.</p><PhotoPlanInfo user={user} /><button className="mj-add-photos" type="button" onClick={() => photoInput.current?.click()}>{draft.photos.length ? 'Replace source photo' : '＋ Add source photo'}</button><input id="mj-photos" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { choosePhotos(event.target.files, draft.photos.length ? 0 : null); event.target.value = '' }} aria-label="Choose one source photograph" aria-describedby="mj-photo-error" />
@@ -228,24 +225,22 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   }
   function relive(mode, useSymbolic = false) { setSymbolic(useSymbolic); setJourneyMode(mode); setActiveStep(0); setView('relive'); setNotice('') }
 
-  const headerNavigation = (<nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>);
-  const accountControls = (<div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
+  if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView(selected ? 'detail' : 'journal')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
+
+  return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''}`}>
+    <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◈</span> MemoVerse<span>.</span></button>
+      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>
+      <div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
         if (!canLeave()) return
         setAccountBusy(true)
         try { await onSignOut() } catch { setError('Could not sign out. Please try again.'); setAccountBusy(false) }
-      }}>Sign out</button></> : <button disabled={checkingAuth || saving} onClick={() => { if (canLeave()) onSignIn?.() }}>Sign in</button>}</div>);
-
-  if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView(selected ? 'detail' : 'journal')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
-
-  return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''} ${view === 'journal' ? 'mj-journal-home' : ''}`}>
-    <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◇</span> MemoVerse</button>
-      {headerNavigation}{accountControls}
+      }}>Sign out</button></> : <button disabled={checkingAuth || saving} onClick={() => { if (canLeave()) onSignIn?.() }}>Sign in</button>}</div>
     </header>
     {error && <div className="mj-error-banner" role="alert">{error}{['journal', 'timeline', 'creations'].includes(view) ? <button onClick={() => setRefresh(value => value + 1)}>Retry loading</button> : null}</div>}
     {notice && <p className="mj-notice" role="status">{notice}</p>}
-    {user && (view !== 'journal' || syncError) && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
+    {user && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
 
-    {['timeline','creations'].includes(view) && <WorldAllowance user={user} />}
+    {['journal','timeline','creations'].includes(view) && <WorldAllowance user={user} />}
     {view === 'plans' && <GenerationPlans user={user} onSignIn={onSignIn} onPurchase={onPurchase} />}
     {view === 'timeline' && <MemoryTimeline owner={owner} entries={entries} loading={loading} onOpen={openMemory} onNew={createMemory} Photo={Photo} SceneRenderer={SceneRenderer} />}
 
@@ -254,16 +249,19 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       {loading ? <p className="mj-loading" role="status">Opening your creations…</p> : entries.some(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && entry.world.source !== 'mock') ? <div className="mj-card-grid">{entries.filter(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && entry.world.source !== 'mock').map(entry => <MemoryCard key={entry.id} entry={entry} onOpen={memory => { if (!canLeave()) return; setSelected(memory); setActivePhoto(0); setDemo(false); setDirty(false); setView('prepare') }} />)}</div> : <div className="mj-empty"><div className="mj-empty-portal" aria-hidden="true">✧</div><h2>Your first world is waiting.</h2><p>Open a journal entry and select Relive My Memory.<br />Generated worlds will be saved here automatically.</p><button className="mj-primary" onClick={() => navigate('journal')}>Go to My Journal ↗</button></div>}
     </section>}
 
-    {view === 'journal' && <JournalHome headingRef={heading} WorldViewer={WorldViewer} entries={entries} loading={loading} user={user} Photo={Photo} onOpen={openMemory} onNew={createMemory}
-      onExplore={memory => { setSelected(memory); setDemo(false); relive('free') }}
-      onDemo={() => { setSelected({ ...emptyDraft(), id: 'symbolic-demo', title: 'A room to remember', story: 'Warm light falls across a familiar room. Take a moment to look around.', date: localDate() }); setDemo(true); relive('free', true) }}
-      plan={<WorldAllowance user={user} />} guestImport={user && <button className="mj-back" disabled={syncing || saving} onClick={async () => {
+    {view === 'journal' && <section className="mj-collection">
+      <div className="mj-page-heading"><div><p className="mj-eyebrow">{view === 'timeline' ? 'A LIFE, ONE MOMENT AT A TIME' : 'YOUR LIFE, BEAUTIFULLY REMEMBERED'}</p><h1 ref={heading} tabIndex={-1}>{view === 'timeline' ? <>Through the <em>years.</em></> : <>My <em>Journal.</em></>}</h1><p>{view === 'timeline' ? 'Follow the thread. Find your way back to then.' : 'The ordinary days. The unforgettable ones. A little place for all of them.'}</p></div><div className="mj-home-actions"><button className="mj-primary" onClick={createMemory}>＋ New Memory</button><button className="mj-back" onClick={() => { setSelected({ ...emptyDraft(), id: 'symbolic-demo', title: 'A room to remember', story: 'Warm light falls across a familiar room. Take a moment to look around.', date: localDate() }); setDemo(true); relive('free', true) }}>Try a Demo ↗</button></div></div>
+      <div className="mj-collection-meta"><span>{entries.length} {entries.length === 1 ? 'memory' : 'memories'} kept close</span><span>{user ? 'Your personal collection' : 'Your personal collection'}</span></div>
+      {loading ? <p className="mj-loading" role="status">Opening your journal…</p> : !entries.length ? <div className="mj-empty"><div className="mj-empty-portal" aria-hidden="true">✧</div><p className="mj-eyebrow">EVERY COLLECTION BEGINS SOMEWHERE</p><h2>What would you like to remember?</h2><p>A photograph and a few words.<br />You don’t need a 3D world to keep a moment.</p><button className="mj-primary" onClick={createMemory}>Create your first memory ↗</button></div> : <div className="mj-card-grid">{entries.map(entry => <MemoryCard key={entry.id} entry={entry} onOpen={openMemory} />)}</div>}
+
+      {user && <button className="mj-back" disabled={syncing || saving} onClick={async () => {
         if (!canLeave() || saveLock.current || syncLock.current) return
         saveLock.current = true; setSaving(true)
         try { const count = await importGuestEntries(owner); setNotice(count ? count + ' guest memories imported. Syncing to your account…' : 'No new guest memories to import.'); setRefresh(value => value + 1) }
         catch (err) { setError(err.message || 'Guest import failed. Please retry.') }
         finally { saveLock.current = false; setSaving(false) }
-      }}>Import this browser’s guest memories into my account ↗</button>} />}
+      }}>Import this browser’s guest memories into my account ↗</button>}
+    </section>}
 
     {view === 'create' && <section className="mj-editor"><button className="mj-back" disabled={saving} onClick={() => navigate(selected && draft.id ? 'detail' : 'journal')}>← Back to {draft.id ? 'memory' : 'journal'}</button><div className="mj-page-heading"><div><p className="mj-eyebrow">MAKE ROOM FOR A MOMENT</p><h1 ref={heading} tabIndex={-1}>{draft.id ? 'Keep the' : 'A new'} <em>{draft.id ? 'details.' : 'memory.'}</em></h1><p>Save the story now. Step inside it whenever you’re ready.</p></div></div>
       {renderMemoryForm()}

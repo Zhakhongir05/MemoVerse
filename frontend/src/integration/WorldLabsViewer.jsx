@@ -9,7 +9,6 @@ import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld } from '../enhancements/schema.js';
 import { requestEnhancements, toProposal } from '../enhancements/api.js';
-import '../ui/ViewerChrome.css';
 import MemoryCastCamera from './MemoryCastCamera.jsx';
 
 function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality, world}) {
@@ -79,13 +78,12 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({world=existingWorld,enhancementResponse,mood:externalMood,onMoodChange,embedded=false,imageUrl='',scene=null,memorycastCue,allowEnhancementRequests=true,showDeveloperTools=false}){
+export default function WorldLabsViewer({world=existingWorld,enhancementResponse,mood:externalMood,onMoodChange,embedded=false,imageUrl='',scene=null,memorycastCue}){
  const response=enhancementResponse??(world.id===existingWorld.id?DEMO_ENHANCEMENT_RESPONSE:null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
   const initial=(response?readEnhancements(response,world.id):{enhancements:[],error:''});
   return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
  });
- const [toolsOpen,setToolsOpen]=useState(false);
  const [quality,setQuality]=useState(()=>window.matchMedia('(pointer: fine)').matches?'full':'balanced');
  const [status,setStatus]=useState(world.id===existingWorld.id?'Opening saved sample…':'Opening your newly generated world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
@@ -117,7 +115,6 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
  useEffect(()=>{
   const controller=new AbortController();let active=true;
   async function load(){
-   if(!allowEnhancementRequests)return;
    const demo=(response?readEnhancements(response,world.id):{enhancements:[],error:''}).enhancements;
    let photo=null;
    if(imageUrl){
@@ -162,7 +159,7 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
   }
   load();
   return ()=>{active=false;controller.abort();};
- },[response,world.id,imageUrl,story,allowEnhancementRequests]);
+ },[response,world.id,imageUrl,story]);
  // Keep the loaded collider available to the in-flight request without making
  // the request re-run when the room finishes loading.
  useEffect(()=>{
@@ -223,14 +220,12 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
-   {showDeveloperTools&&anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={activeAnchorId===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
+   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={activeAnchorId===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>{setJourney(0);memorycastCue?.onCancel?.();}}/>
    <CameraJourney controls={controls} journey={memorycastCue?0:journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
    <MemoryCastCamera cue={memorycastCue} controls={controls} ready={status.startsWith('Loaded')} stopDefaultJourney={setJourney}/>
   </Canvas>
   <div className="atmosphere-wash" aria-hidden="true"/>
-  {!embedded&&<button className="world-settings-toggle" aria-label="Viewer settings" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(value=>!value)}>{toolsOpen?'Close settings':'Viewer settings'}</button>}
-  {!embedded&&toolsOpen&&<div className="world-settings-drawer" aria-label="Viewer settings panel">
   <div className="sense-controls" aria-label="SenseShift atmosphere">
    {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>onMoodChange?onMoodChange(value):setMoodSetting(value)}>{value}</button>)}
    <button aria-pressed={quality==='full'} onClick={()=>setQuality(q=>q==='full'?'balanced':'full')}>{quality==='full'?'Full detail · switch to smooth':'Smooth · load full detail'}</button>
@@ -256,8 +251,7 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
     <button onClick={()=>setSelectedEnhancement(null)}>Close</button>
    </article>:<p className="enhancement-hint">Click an object in the room to read its story.</p>}
   </section>}
-  </div>}
-  {showDeveloperTools&&<details className="world-tools"><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
+  <details className="world-tools" open><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
    <label>New memory<textarea value={memory} maxLength={2000} rows={2} placeholder="Write a real memory, then place it in the room…" onChange={e=>setMemory(e.target.value)}/></label>
    <button disabled={!memory.trim()&&!placing} onClick={()=>setPlacing(placing?false:'new')}>{placing?'Cancel placement':'Place memory'}</button>
    {placing&&<p>Double-click a surface to {placing==='move'?'move this memory':'place your memory'}.</p>}
@@ -272,6 +266,6 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
    {audioError&&<p role="alert">{audioError}</p>}
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
    <p className="local-note">Attachments stay in this tab. Reloading or switching modes clears the journal. No uploads or API calls here.</p>
-  </details>}
+  </details>
  </div></Boundary>;
 }
