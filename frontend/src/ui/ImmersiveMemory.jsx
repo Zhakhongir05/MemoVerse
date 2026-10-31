@@ -10,6 +10,7 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   const [panel, setPanel] = useState(initialMode === 'guided' ? 'journey' : null)
   const [mood, setMood] = useState(memory.mood)
   const [cameraReset, setCameraReset] = useState(0)
+  const [podcastCue, setPodcastCue] = useState(null)
   const [fullscreen, setFullscreen] = useState(false)
   const [fullscreenError, setFullscreenError] = useState('')
   const frame = useRef(null)
@@ -62,7 +63,7 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
     worldMode: symbolic ? 'sample' : 'saved',
     activeStep: panel === 'journey' ? activeStep : null,
     showAnchors: false, showMarkers: false,
-    cameraResetKey: cameraReset,
+    cameraResetKey: cameraReset, podcastCue: panel === 'journey' ? podcastCue : null,
   }
 
   useEffect(() => {
@@ -98,7 +99,7 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
     <aside className={`im-panel ${panel ? 'im-panel-visible' : ''}`} aria-label="Memory controls panel" aria-hidden={!panel} inert={!panel}>
       {panel && <div className="im-panel-content"><header><div><p className="mj-eyebrow">{panel === 'edit' ? 'MAKE THE MOMENT YOURS' : 'A LITTLE CLOSER TO THEN'}</p><h2 ref={panelHeading} tabIndex={-1}>{({ mood: 'SenseShift', journey: 'A guided journey', edit: 'Your memory', info: 'About this memory' })[panel]}</h2></div><button className="im-close" aria-label="Close memory panel" disabled={saving} onClick={closePanel}>×</button></header>
         {panel === 'mood' && <><p className="im-panel-lede">Set the atmosphere for this visit.</p><fieldset className="im-mood-options"><legend className="mj-sr-only">Scene atmosphere</legend>{['Nostalgic', 'Joyful', 'Melancholic'].map(value => <label key={value} className={mood === value ? 'im-chosen' : ''}><input type="radio" name="immersive-mood" checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</fieldset></>}
-        {panel === 'journey' && <MemoryPodcast memory={memory} user={memory.owner && memory.owner!=='local-device' ? {id:memory.owner} : null} />}
+        {panel === 'journey' && <MemoryPodcast onPlaybackChange={setPodcastCue} memory={memory} user={memory.owner && memory.owner!=='local-device' ? {id:memory.owner} : null} />}
         {panel === 'journey' && step && <><p className="im-step-count">MOMENT {activeStep + 1} OF {steps.length}</p><h3>{step.title}</h3>{step.photoIndex !== null && <Photo file={memory.photos[step.photoIndex]} alt={`Memory photograph ${step.photoIndex + 1}`} className="im-journey-photo" />}<p className="im-story">{step.text}</p><div className="im-journey-actions"><button className="mj-secondary" disabled={activeStep === 0} onClick={() => onStepChange(activeStep - 1)}>← Previous</button><button className="mj-primary" onClick={() => activeStep + 1 === steps.length ? closePanel() : onStepChange(activeStep + 1)}>{activeStep + 1 === steps.length ? 'Explore freely' : 'Next moment →'}</button></div></>}
         {panel === 'edit' && <>{error && <p className="mj-field-error" role="alert">Your changes could not be saved. Please try again.</p>}{editor}</>}
         {panel === 'info' && <><p className="im-panel-lede">{memory.title}</p><p className="im-story">{memory.story}</p><p className="im-panel-note">{formatMemoryDate(memory.date)} · {memory.mood}</p>{onOpenStudio && <button className="mj-secondary" disabled={saving} onClick={onOpenStudio}>Open Memory Studio</button>}<details className="im-debug"><summary>Technical details</summary><p>Viewer: {hasWorld ? 'World Labs integration' : 'Predefined R3F demo'}</p><p>{JourneyController ? 'Journey controller supplied.' : 'Guided reading only. AI narration and synchronized camera anchors await integration.'}</p><p>Marker overlays are disabled for exploration.</p>{syncError && <p>Sync: {syncError}</p>}{error && <p>Save: {error}</p>}</details></>}

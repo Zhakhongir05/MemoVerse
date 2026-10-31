@@ -21,12 +21,14 @@ def public_tour(tour):
     return {key:value for key,value in tour.items() if key not in ('context','lease','lease_until','user_id')}
 
 @router.get('/memories/{memory_id}')
-async def load_tour(memory_id:UUID,language:str=None,tour_id:UUID=None,user=Depends(authenticated_user),store=Depends(get_tour_store)):
+async def load_tour(memory_id:UUID,language:str=None,tour_id:UUID=None,user=Depends(authenticated_user),store=Depends(get_tour_store),provider=Depends(get_tour_provider)):
     if language is not None and language not in ('en','ko'):raise HTTPException(422,'Choose en or ko narration.')
     memory=await store.journal(user,str(memory_id))
     result=await store.tour_rpc('mc_read',{'p_user':user,'p_memory':str(memory_id),'p_tour':str(tour_id) if tour_id else None})
     tour=result.get('tour')
-    if not tour:return {'tour':None,'stale':False,'generation_enabled':bool(result.get('enabled')) and os.getenv('MEMORYCAST_LIVE_ENABLED','false').lower()=='true'}
+    reason = 'memorycast_database_disabled' if not result.get('enabled') else 'memorycast_disabled' if os.getenv('MEMORYCAST_LIVE_ENABLED','false').lower()!='true' else 'memorycast_providers_unconfigured' if not provider.configured() else None
+    readiness={'generation_enabled':reason is None,'generation_reason':reason}
+    if not tour:return {'tour':None,'stale':False,**readiness}
     try:current=fingerprint(context_for(memory,user,language or tour['language']))
     except ValueError:raise HTTPException(422,'Saved memory metadata needs attention.') from None
     output=public_tour(tour);output['audio']=[]
@@ -37,7 +39,7 @@ async def load_tour(memory_id:UUID,language:str=None,tour_id:UUID=None,user=Depe
         if len(paths)!=3 or len(durations)!=3 or any(isinstance(d,bool) or not isinstance(d,(int,float)) or not math.isfinite(d) or not 0<d<=180 for d in durations) or any(path!=prefix+str(i+1)+'.wav' for i,path in enumerate(paths)):raise HTTPException(503,'Saved narration references need owner review.')
         urls=await asyncio.gather(*(store.signed_audio(path) for path in paths))
         output['audio']=[{'order':i+1,'url':url,'expires_in':900,'duration_seconds':tour['audio_durations'][i]} for i,url in enumerate(urls)]
-    return {'tour':output,'stale':current!=tour['input_hash'],'previous_ready_tour_id':result.get('previous_ready_tour_id'),'generation_enabled':bool(result.get('enabled')) and os.getenv('MEMORYCAST_LIVE_ENABLED','false').lower()=='true'}
+    return {'tour':output,'stale':current!=tour['input_hash'],'previous_ready_tour_id':result.get('previous_ready_tour_id'),**readiness}
 
 @router.post('/memories/{memory_id}',status_code=202)
 async def create_tour(memory_id:UUID,body:TourRequest,user=Depends(authenticated_user),store=Depends(get_tour_store),provider=Depends(get_tour_provider)):

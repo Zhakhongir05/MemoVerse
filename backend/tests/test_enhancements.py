@@ -53,17 +53,20 @@ class EnhancementTests(unittest.TestCase):
             self.assertEqual(client.post('/api/generate-enhancements',data={'context':'{}'}).status_code,422)
     def test_mocked_ai_and_failure(self):
         analysis=dict(objects=[],spatial_layout='A desk beside a window',lighting='Bright',colors=['white'],uncertainty='No metric evidence')
-        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(analysis)))))
-        planner=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion({'enhancements':[item()]})))))
+        plan={'enhancements':[item()]}
+        create=AsyncMock(side_effect=lambda **kwargs: completion(analysis if isinstance(kwargs['messages'][1]['content'],list) else plan))
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
         with TestClient(app) as client:
-            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,planner)
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai');self.assertEqual(r.json()['enhancements'][0]['memory'],'User supplied memory')
-            planner.chat.completions.create.return_value=completion({'enhancements':[{**item(),'memory':''}]})
+            planned=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])
+            self.assertEqual(planned['written_memory'],'My supplied story')
+            plan={'enhancements':[{**item(),'memory':''}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['enhancements'][0]['memory'],'My supplied story')
-            planner.chat.completions.create.return_value=completion({'enhancements':[{**item(),'assetId':'bad'}]})
+            plan={'enhancements':[{**item(),'assetId':'bad'}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['source'],'demo');self.assertTrue(r.json()['fallback'])
     def test_invalid_and_oversized_photo(self):
@@ -79,16 +82,15 @@ class EnhancementTests(unittest.TestCase):
 
     def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
         analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
-        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(analysis)))))
         bed=item();chair={**item(),'id':'chair-1','type':'chair','assetId':'chair-modern-01'}
-        planner=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=[completion({'enhancements':[bed]}),completion({'enhancements':[chair]})]))))
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=[completion(analysis),completion({'enhancements':[bed]}),completion(analysis),completion({'enhancements':[chair]})]))))
         with TestClient(app) as client:
-            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,planner)
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
             outputs=[]
             for color in ['red','blue']:
                 b=io.BytesIO();Image.new('RGB',(32,32),color).save(b,format='PNG')
                 r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
                 self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
                 outputs.append(r.json()['enhancements'][0]['type'])
-            photos=[call.kwargs['messages'][1]['content'][0]['image_url']['url'] for call in vision.chat.completions.create.await_args_list]
+            photos=[call.kwargs['messages'][1]['content'][0]['image_url']['url'] for call in vision.chat.completions.create.await_args_list if isinstance(call.kwargs['messages'][1]['content'],list)]
             self.assertNotEqual(photos[0],photos[1]);self.assertEqual(outputs,['bed','chair'])
