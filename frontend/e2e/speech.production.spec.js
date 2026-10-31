@@ -39,7 +39,7 @@ async function dictate(page, text) {
   await page.evaluate(text => window.testSpeech.onresult({ results: [Object.assign([{ transcript: text }], { isFinal: true })] }), text)
 }
 
-test('production HTTPS: dictation preserves typing, review inserts once, and the saved entry survives reload', async ({ page }) => {
+test('production HTTPS: dictation preserves typing, words insert automatically once, and the saved entry survives reload', async ({ page }) => {
   await editor(page)
   await page.clock.install()
   await page.locator('#mj-title').fill('A spoken memory')
@@ -47,20 +47,20 @@ test('production HTTPS: dictation preserves typing, review inserts once, and the
   await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
   // A synchronous native start must cancel the permission timeout too.
   await page.clock.fastForward(16000)
-  await expect(page.getByText('Listening… Speak naturally, then stop to review.')).toBeVisible()
+  await expect(page.getByText('Listening… Your words appear in your story automatically.')).toBeVisible()
   await dictate(page, 'The afternoon was golden.')
   await dictate(page, 'The afternoon was golden.')
-  await expect(page.locator('#mj-story')).toHaveValue('Typed beginning.')
+  await expect(page.locator('#mj-story')).toHaveValue('Typed beginning. The afternoon was golden.')
   await page.getByRole('button', { name: 'Stop dictation', exact: true }).click()
-  await page.getByRole('button', { name: 'Add to my story', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Add to my story', exact: true })).toHaveCount(0)
   await expect(page.locator('#mj-story')).toHaveValue('Typed beginning. The afternoon was golden.')
   await page.getByRole('button', { name: 'Save journal entry', exact: false }).click()
   await expect(page.locator('.mj-detail-story')).toHaveText('Typed beginning. The afternoon was golden.')
   await page.reload()
   await page.getByRole('button', { name: 'Explore Memories', exact: true }).click()
   await page.getByRole('button', { name: 'Continue exploring without signing in' }).click()
-  await page.getByRole('button', { name: 'Read current memory', exact: true }).click()
-  await expect(page.locator('.jh-full-story')).toHaveText('Typed beginning. The afternoon was golden.')
+  await page.getByRole('button', { name: 'Open current journal entry', exact: true }).click()
+  await expect(page.locator('.mj-detail-story')).toHaveText('Typed beginning. The afternoon was golden.')
 })
 
 test('production HTTPS: permission/network errors reset controls even without an end event', async ({ page }) => {
@@ -91,7 +91,7 @@ test('production HTTPS: stalled stop preserves captured text and closing release
   await dictate(page, 'Words worth keeping.')
   await page.getByRole('button', { name: 'Stop dictation', exact: true }).click()
   await page.clock.fastForward(6000)
-  await expect(page.getByRole('button', { name: 'Add to my story', exact: true })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Add to my story', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Start dictation', exact: true }).click()
   const before = await page.evaluate(() => window.speechAborts)
   await page.getByRole('button', { name: 'Close voice input', exact: true }).click()

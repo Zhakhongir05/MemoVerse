@@ -1,39 +1,67 @@
 import { useEffect, useRef, useState } from 'react'
+import { pendingPodcast, watchPodcast, preparePodcast, watchPodcastPreparation } from '../integration/preparePodcast.js'
 import { memorycastRequest } from '../integration/memorycastApi.js'
-export default function MemoryPodcast({ memory, user, onPlaybackChange }) {
-  const [result,setResult]=useState(null),[error,setError]=useState(''),[busy,setBusy]=useState(false),[chapter,setChapter]=useState(0),[reload,setReload]=useState(0)
-  const controller=useRef(null)
+export default function MemoryPodcast({ memory, user, onPlaybackChange, autoPlay = false, compact = false, allowCreate = false, syncBusy = false }) {
+  const [result,setResult]=useState(null),[error,setError]=useState(''),[chapter,setChapter]=useState(0),[reload,setReload]=useState(0)
+  const audio=useRef(null)
+  const played=useRef(false)
+  const [playBlocked,setPlayBlocked]=useState(false)
+  const latest=useRef(null)
+  useEffect(()=>{latest.current=result},[result])
   const userId=user?.id
-  useEffect(()=>{
-    const request=new AbortController();controller.current=request;setResult(null);setError('');setChapter(0)
-    if(userId && /^[a-f0-9-]{36}$/i.test(memory.id)) memorycastRequest('/memories/'+memory.id,{signal:request.signal}).then(setResult).catch(error=>{if(!request.signal.aborted)setError(error.message)})
-    return()=>request.abort()
-  },[memory.id,memory.updatedAt,userId,reload])
-  useEffect(()=>()=>onPlaybackChange?.(null),[onPlaybackChange])
-  async function create(){
-    if(busy)return
-    setBusy(true);setError('')
-    try{
-      const signal=controller.current.signal
-      let {tour}=await memorycastRequest('/memories/'+memory.id,{method:'POST',body:{approved:true,language:'en'},signal})
-      setResult(current=>({...current,tour}))
-      // Each server step is leased and persisted. Replaying uses GET only.
-      for(let step=0;step<11 && tour.status==='pending';step++){
-        const next=await memorycastRequest('/tours/'+tour.id+'/advance',{method:'POST',signal})
-        tour=next.tour;setResult(current=>({...current,tour}))
-        if(!next.advanced)break
-      }
-      setResult(await memorycastRequest('/memories/'+memory.id,{signal}))
-    }catch(error){if(error.name!=='AbortError')setError(error.message)}
-    finally{setBusy(false)}
+  const [creating,setCreating]=useState(false),[resume,setResume]=useState(false)
+  async function create() {
+    if(creating || syncBusy || memory.syncState!=='synced')return
+    setCreating(true);setError('')
+    try { setResult(await preparePodcast(memory.id,undefined,{retryFailed:true}));setResume(true) }
+    catch(error){setError(error.message)}
+    finally{setCreating(false)}
   }
-  const tour=result?.tour, ready=tour?.status==='ready',part=tour?.script?.chapters?.[chapter]
-  return <section className="mj-glass mj-podcast" aria-label="AI memory podcast"><h2>Listen to your memory</h2><p>Your saved journal entry becomes a three-chapter AI-narrated podcast. No audio upload or voice recording is required.</p>
-    {error&&<><p role="alert">{error}</p><button type="button" disabled={busy} onClick={()=>setReload(n=>n+1)}>Retry loading podcast</button></>}
-    {!error && result && !result.generation_enabled && !ready && <p role="status">{result.generation_reason==='memorycast_database_disabled' ? 'Podcast creation is disabled in the database. The owner must enable MemoryCast.' : result.generation_reason==='memorycast_providers_unconfigured' ? 'Podcast providers are not configured on the server.' : 'Podcast creation is disabled on the server. The owner must configure MEMORYCAST_LIVE_ENABLED.'}</p>}
-    {tour?.message&&<p role="status">{tour.message}</p>}
-    {ready&&part?<><p>AI-generated narration · Chapter {chapter+1} of 3</p><h3>{part.title}</h3><p>{part.narration}</p><audio onPlay={()=>onPlaybackChange?.(part)} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2)setChapter(n=>n+1)}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls preload="none" src={tour.audio?.[chapter]?.url}/><button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n-1)}}>Previous chapter</button><button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n+1)}}>Next chapter</button>{result.stale&&<p>This is the saved podcast from an earlier version of your entry. Replaying does not regenerate it.</p>}</>:
-      <button type="button" disabled={busy || !user || !result?.generation_enabled || ['uncertain','failed'].includes(tour?.status)} onClick={create}>{busy?'Creating your podcast…':tour?.status==='pending'?'Continue podcast creation':'Create podcast from saved entry'}</button>}
-    {!ready&&<p>The creation button sends the saved entry to AI providers for narration. Dictation only fills in your editable text.</p>}
+  useEffect(()=>{
+    if(resume && result?.tour?.status==='pending')return watchPodcastPreparation(userId,memory.id)
+  },[resume,result?.tour?.status,userId,memory.id])
+  useEffect(()=>{
+    const request=new AbortController();setResult(null);setError('');setChapter(0);played.current=false
+    if(userId && /^[a-f0-9-]{36}$/i.test(memory.id)) memorycastRequest('/memories/'+memory.id,{signal:request.signal}).then(setResult).catch(error=>{if(!request.signal.aborted)setError(error.message)})
+    pendingPodcast(memory.id)?.then(value=>{
+      if(!request.signal.aborted){setResult(value);setError('')}
+    }).catch(error=>{if(!request.signal.aborted)setError(error.message)})
+    const unsubscribe=watchPodcast(memory.id,(value,failure)=>{
+      if(request.signal.aborted)return
+      if(failure)setError(failure.message)
+      else{setResult(value);setError('')}
+    })
+    // Loading a player only reads saved state; it never starts a paid job.
+    const timer=setInterval(()=>{
+      if(!pendingPodcast(memory.id) && latest.current?.tour?.status!=='pending')return
+      memorycastRequest('/memories/'+memory.id,{signal:request.signal}).then(value=>{
+        if(!request.signal.aborted){setResult(value);setError('')}
+      }).catch(()=>{})
+    },5000)
+    return()=>{request.abort();clearInterval(timer);unsubscribe()}
+  },[memory.id,userId,reload])
+  useEffect(()=>()=>onPlaybackChange?.(null),[onPlaybackChange])
+  const tour=result?.tour, ready=!error && tour?.status==='ready' && tour.audio?.length===3,part=tour?.script?.chapters?.[chapter]
+  useEffect(()=>{
+    if(!autoPlay){audio.current?.pause();played.current=false;return}
+    if(!ready || played.current || !audio.current)return
+    played.current=true
+    audio.current.play().catch(()=>setPlayBlocked(true))
+  },[autoPlay,ready,chapter])
+  return <section className={`mj-podcast ${compact ? 'mj-podcast-compact' : 'mj-glass'}`} aria-label="Saved memory podcast"><h2 className="mj-sr-only">Your memory, narrated</h2>
+    {error&&<><p role="alert">{error}</p><button type="button" onClick={()=>setReload(n=>n+1)}>Retry loading podcast</button></>}
+    {!error && result && !result.generation_enabled && !ready && <p role="status">{result.generation_reason==='memorycast_database_disabled' ? 'Podcast preparation is temporarily unavailable. You can still explore your world.' : result.generation_reason==='memorycast_providers_unconfigured' ? 'Podcast preparation is temporarily unavailable. You can still explore your world.' : 'Podcast preparation is temporarily unavailable. You can still explore your world.'}</p>}
+    {!error&&!ready&&tour?.status==='pending'&&<p role="status">Preparing your podcast… You can explore while it finishes.</p>}
+    {!error&&['failed','uncertain'].includes(tour?.status)&&<p role="status">Your included podcast needs recovery. Your journal is safe; no extra world generation is needed.</p>}
+    {allowCreate && userId && result && !ready && (!tour || tour.status==='failed') && <button className="mj-secondary" disabled={creating || syncBusy || memory.syncState!=='synced' || !result.generation_enabled} onClick={create}>{creating ? 'Preparing podcast…' : syncBusy || memory.syncState!=='synced' ? 'Syncing memory…' : tour ? 'Retry podcast' : 'Create podcast'}</button>}
+    {!allowCreate&&!error&&result&&!tour&&<p role="status">Create your podcast from the saved memory page.</p>}
+    {ready&&part&&<>
+      {!compact && <><p className="mj-podcast-count">{chapter+1}/3</p><h3>{part.title}</h3><details className="mj-podcast-transcript"><summary>Transcript</summary><p>{part.narration}</p></details></>}
+      <audio ref={audio} aria-label="Memory podcast audio" onPlay={()=>{setPlayBlocked(false);onPlaybackChange?.(part)}} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2){played.current=false;setChapter(n=>n+1)}}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls={!compact} hidden={compact} preload="none" src={tour.audio?.[chapter]?.url}/>
+      {playBlocked&&<p role="status">{compact ? "Tap headphones again to retry playback." : "Press play to listen."}</p>}
+      {!compact && <><button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n-1)}} aria-label="Previous chapter" title="Previous chapter">←</button>
+      <button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n+1)}} aria-label="Next chapter" title="Next chapter">→</button></>}
+    </>}
+
   </section>
 }

@@ -14,7 +14,9 @@ function Dictation({ value, onChange, disabled }) {
   const stopTimer = useRef(null)
   const [phase, setPhase] = useState('idle')
   const [language, setLanguage] = useState('en-US')
-  const [transcript, setTranscript] = useState('')
+  const story = useRef(value)
+  const change = useRef(onChange)
+  useEffect(() => { story.current = value; change.current = onChange }, [value, onChange])
   const [interim, setInterim] = useState('')
   const [error, setError] = useState('')
   const busy = phase !== 'idle'
@@ -51,9 +53,9 @@ function Dictation({ value, onChange, disabled }) {
     catch { setError('Your browser could not open speech recognition. You can still type your story.'); return }
     recognition.current = current
     current.lang = language; current.continuous = true; current.interimResults = true
-    // Each session reports a cumulative list. Replace its preview rather than
-    // appending repeated interim/final events into the actual journal story.
-    const previous = transcript
+    // Recognition repeats cumulative results. Insert each finalized segment once;
+    // keep unfinished speech in the live preview until it becomes final.
+    const inserted = new Set()
     function finish() {
       if (recognition.current !== current) return
       recognition.current = null
@@ -64,7 +66,14 @@ function Dictation({ value, onChange, disabled }) {
     current.onstart = () => { clearTimeout(permissionTimer.current); setPhase('listening') }
     current.onresult = event => {
       const result = readSpeechResults(event.results)
-      setTranscript(appendDictation(previous, result.final))
+      for (const [index, item] of Array.from(event.results).entries()) {
+        if (!item.isFinal || inserted.has(index)) continue
+        const combined = appendDictation(story.current, item[0]?.transcript || '')
+        if (combined.length > 12000) { setError('Your story has reached 12,000 characters. Shorten it before continuing.'); current.stop(); break }
+        inserted.add(index)
+        story.current = combined
+        change.current(combined)
+      }
       setInterim(result.interim)
     }
     current.onerror = event => {
@@ -106,26 +115,20 @@ function Dictation({ value, onChange, disabled }) {
       stopTimer.current = setTimeout(() => {
         if (recognition.current !== current) return
         current.onend?.(); current.abort()
-        setError('Dictation has stopped. You can review the words already captured or start again.')
+        setError('Dictation has stopped. Your captured words are already in your story.')
       }, 5000)
       current.stop()
     }
     catch { recognition.current = null; setPhase('idle') }
   }
-  function insert() {
-    const combined = appendDictation(value, transcript)
-    if (combined.length > 12000) { setError('Your story would exceed 12,000 characters. Shorten the transcript or story before adding it.'); return }
-    onChange(combined); setTranscript(''); setError('')
-  }
   return <section className="mj-speech" aria-label="Speak your memory">
     <div className="mj-speech-heading"><strong>Speak your memory</strong><span>Turn your words into a story.</span></div>
     {!Recognition ? <p>Voice typing is unavailable in this browser. You can still type your story above.</p> : <>
-      <p>Your browser’s speech service transcribes your microphone and may process speech online. MemoVerse saves only the text you add to your story.</p>
+      <p>Your browser’s speech service transcribes your microphone and may process speech online. Recognized words appear directly in your story. No audio recording is saved.</p>
       <div className="mj-speech-controls"><label>Spoken language<select value={language} disabled={busy || disabled} onChange={event => setLanguage(event.target.value)}><option value="en-US">English</option><option value="ko-KR">한국어</option><option value="ms-MY">Bahasa Melayu</option><option value="id-ID">Bahasa Indonesia</option><option value="zh-CN">中文</option></select></label>
         <button type="button" className="mj-secondary" disabled={disabled || phase === 'stopping'} aria-pressed={busy} onClick={busy ? stop : start}>{phase === 'starting' ? 'Cancel microphone' : phase === 'stopping' ? 'Finishing…' : busy ? 'Stop dictation' : 'Start dictation'}</button></div>
-      <p role="status">{phase === 'listening' ? 'Listening… Speak naturally, then stop to review.' : phase === 'starting' ? 'Waiting for microphone permission…' : phase === 'stopping' ? 'Finishing your transcript…' : transcript ? 'Review your words before adding them.' : 'Microphone is off.'}</p>
+      <p role="status">{phase === 'listening' ? 'Listening… Your words appear in your story automatically.' : phase === 'starting' ? 'Waiting for microphone permission…' : phase === 'stopping' ? 'Finishing your transcript…' : 'Microphone is off.'}</p>
       {interim && <p className="mj-speech-interim" aria-label="Live transcription">{interim}</p>}
-      {transcript && <><label>Review transcript<textarea rows={4} maxLength={12000} value={transcript} disabled={busy || disabled} onChange={event => setTranscript(event.target.value)} /></label><div className="mj-speech-controls"><button type="button" className="mj-secondary" disabled={busy || disabled} onClick={insert}>Add to my story</button><button type="button" className="mj-back" disabled={busy || disabled} onClick={() => { setTranscript(''); setError('') }}>Discard transcript</button></div></>}
       {error && <p className="mj-field-error" role="alert">{error}</p>}
     </>}
   </section>

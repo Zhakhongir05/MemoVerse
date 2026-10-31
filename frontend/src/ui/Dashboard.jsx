@@ -176,9 +176,9 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
     {screen === 'landing' && <section className="mv-landing mv-enter">
       <div className="mv-landing-copy"><p className="mv-eyebrow"><span /> YOUR PAST, BEAUTIFULLY PRESENT</p>
         <h1 ref={heading} tabIndex={-1}>Don’t just remember it.<br /><em>Step inside it.</em></h1>
-        <p className="mv-lede">Some moments never really leave us.<br />Turn a photograph into a world you can return to.</p>
+        <p className="mv-lede">Some moments never really leave us.<br />Turn a photograph into a world you can return to — and feel it again.</p>
         <button className="mv-primary" disabled={checkingAuth} onClick={() => onExplore ? onExplore() : user ? setScreen('upload') : onSignIn?.()}>Explore Memories <span aria-hidden="true">↗</span></button>
-        <p className="mv-fine">One photograph. A thousand feelings.{!user && ' Sign in to explore and save your memories.'}</p>
+        <p className="mv-fine">One photograph. Sound, scent and touch remembered from your own words.{!user && ' Sign in to explore and save your memories.'}</p>
       </div>
       <div className="mv-landing-art"><Portal /><span className="mv-art-caption">THE WAY BACK IS THROUGH</span></div>
       <footer className="mv-landing-footer"><span>IMAGINED WITH AI. <strong>FELT BY YOU.</strong></span><span>01 — THE BEGINNING</span></footer>

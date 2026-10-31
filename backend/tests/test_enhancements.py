@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from backend.main import app
 from backend.agent import ScenePipeline,Settings
-from backend.enhancements import Enhancement, EnhancementContext, EnhancementManifest, Calibration, CATALOG, manifest, raw_capture_to_render
+from backend.enhancements import Enhancement, EnhancementContext, EnhancementManifest, Calibration, CATALOG, PERSON_TERMS, manifest, raw_capture_to_render, sanitize_ai_memory
 
 WORLD='4fad570a-957c-43a7-b7c9-150945606413'
 def item(**changes):
@@ -66,7 +66,7 @@ class EnhancementTests(unittest.TestCase):
             plan={'enhancements':[{**item(),'memory':''}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['enhancements'][0]['memory'],'My supplied story')
-            plan={'enhancements':[{**item(),'assetId':'bad'}]}
+            plan={'enhancements':[{**item(),'type':'curtains','assetId':'curtains-01'}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['source'],'demo');self.assertTrue(r.json()['fallback'])
     def test_invalid_and_oversized_photo(self):
@@ -79,6 +79,127 @@ class EnhancementTests(unittest.TestCase):
             app.state.pipeline=ScenePipeline(Settings(demo_mode=True))
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())})
             self.assertEqual(r.json()['enhancements'],[]);self.assertTrue(r.json()['fallback'])
+
+    def test_photo_position_is_optional_and_clamped(self):
+        from backend.schemas import PhotoAnalysis
+        base=dict(description='A stool',location='Right of the island')
+        for value,expected in [([0.2,0.8],(0.2,0.8)),([2,-1],(1.0,0.0)),([1],None),(['a','b'],None),('nope',None)]:
+            obj=PhotoAnalysis.model_validate(dict(objects=[{**base,'photoPosition':value}],spatial_layout='Near the island',lighting='Bright',colors=['white'],uncertainty='Approximate'))
+            self.assertEqual(obj.objects[0].photoPosition,expected)
+        self.assertEqual(Enhancement.model_validate({**item(),'photoPosition':[2,-1]}).photoPosition,(1.0,0.0))
+        self.assertIsNone(Enhancement.model_validate({**item(),'photoPosition':'left'}).photoPosition)
+        c=EnhancementContext.model_validate(context())
+        m=manifest(c,[Enhancement.model_validate({**item(),'photoPosition':[0.25,0.75]})],'ai')
+        self.assertEqual(m.enhancements[0].photoPosition,(0.25,0.75))
+
+    def test_ai_memory_never_mentions_people(self):
+        for text,expected in [
+            ('A stool on which the boy is sitting.',''),
+            ('A wooden stool beside the island. The boy sits on it.','A wooden stool beside the island.'),
+            ('A basket near her chair.',''),
+            ('A pendant light above the island.','A pendant light above the island.'),
+        ]:
+            self.assertEqual(sanitize_ai_memory(text),expected)
+        c=EnhancementContext.model_validate(context())
+        # AI memory is cleaned; a user's own words are never rewritten.
+        self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'A stool on which the boy is sitting.'})],'ai').enhancements[0].memory,'')
+        self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'My grandfather sat here.'})],'user').enhancements[0].memory,'My grandfather sat here.')
+
+    def test_endpoint_round_trips_photo_positions(self):
+        analysis=dict(objects=[dict(description='A wooden stool',location='Right of the island',photoPosition=[0.8,0.6])],spatial_layout='Stool beside an island',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
+        plan={'enhancements':[{**item(),'photoPosition':[0.8,0.6]}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['enhancements'][0]['photoPosition'],[0.8,0.6])
+            self.assertIn('photoPosition',create.await_args_list[0].kwargs['messages'][0]['content'])
+            planned=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])
+            self.assertEqual(planned['photo_analysis']['objects'][0]['photoPosition'],[0.8,0.6])
+
+    def test_endpoint_strips_people_from_ai_memory(self):
+        analysis=dict(objects=[],spatial_layout='A stool beside an island',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
+        plan={'enhancements':[{**item(),'memory':'A stool on which the boy sits at the island.'}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            memory=r.json()['enhancements'][0]['memory']
+            self.assertEqual(memory,'');self.assertIsNone(PERSON_TERMS.search(memory))
+
+    def test_one_unusable_proposal_does_not_discard_the_rest(self):
+        # A single unmappable object (or an oversized list) used to fail the whole
+        # reply and silently fall back to no furniture.
+        good=item()
+        analysis=dict(objects=[{'description':f'Object {n}','location':'Floor','photoPosition':[.5,.5]} for n in range(25)],
+            spatial_layout='',lighting='',colors=['white']*12,uncertainty='')
+        plan={'enhancements':[good,{**item(),'id':'bad-1','type':'curtains','assetId':'curtain-01'},{**item(),'id':'bad-2','position':[0,0]}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual([e['id'] for e in r.json()['enhancements']],['bed-1'])
+            observed=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])['photo_analysis']
+            self.assertEqual(len(observed['objects']),20)
+            self.assertEqual(observed['spatial_layout'],'Layout not stated')
+
+    def test_truncated_vision_reply_is_retried_once(self):
+        truncated=SimpleNamespace(choices=[SimpleNamespace(finish_reason='length',message=SimpleNamespace(content='{"objects": [',refusal=None))])
+        analysis=dict(objects=[],spatial_layout='A desk beside a window',lighting='Bright',colors=['white'],uncertainty='Approximate')
+        plan={'enhancements':[item()]}
+        create=AsyncMock(side_effect=[truncated,completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual(create.await_count,3)
+            self.assertEqual(create.await_args_list[0].kwargs['max_completion_tokens'],2600)
+            self.assertEqual(create.await_args_list[1].kwargs['max_completion_tokens'],4000)
+
+    def test_truncated_plan_is_retried_once(self):
+        truncated=SimpleNamespace(choices=[SimpleNamespace(finish_reason='length',message=SimpleNamespace(content='{"enhancements": [',refusal=None))])
+        analysis=dict(objects=[],spatial_layout='A desk beside a window',lighting='Bright',colors=['white'],uncertainty='Approximate')
+        create=AsyncMock(side_effect=[completion(analysis),truncated,completion({'enhancements':[item()]})])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual(create.await_count,3)
+            self.assertEqual(create.await_args_list[1].kwargs['max_completion_tokens'],4000)
+            self.assertEqual(create.await_args_list[2].kwargs['max_completion_tokens'],6000)
+
+    def test_everyday_names_map_onto_approved_assets(self):
+        # The planner names furniture the way a person would; those names must
+        # render as an approved mesh instead of being dropped.
+        from backend.enhancements import parse_plan
+        from backend.agent import PipelineFailure
+        plan={'enhancements':[
+            {**item(),'id':'bench-1','type':'bench','assetId':'bench-01'},
+            {**item(),'id':'nightstand-1','type':'Nightstand','assetId':'nightstand-wood'},
+            {**item(),'id':'ceiling-1','type':'chandelier','assetId':'chandelier-01','anchor':'ceiling'},
+            {**item(),'id':'chair-1','type':'bench','assetId':'chair-modern-01'},
+            {**item(),'id':'curtain-1','type':'curtains','assetId':'curtains-01'},
+        ]}
+        got={e.id:(e.type,e.assetId) for e in parse_plan(completion(plan)).enhancements}
+        self.assertEqual(got['bench-1'],('chair','chair-modern-01'))
+        self.assertEqual(got['nightstand-1'],('desk','desk-modern-01'))
+        self.assertEqual(got['ceiling-1'],('pendant','pendant-warm-01'))
+        self.assertEqual(got['chair-1'],('chair','chair-modern-01'))
+        self.assertNotIn('curtain-1',got)
+        with self.assertRaises(PipelineFailure):
+            parse_plan(completion({'enhancements':[{**item(),'type':'curtains','assetId':'curtains-01'}]}))
 
     def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
         analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')

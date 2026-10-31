@@ -24,14 +24,26 @@ def wav():
     out=io.BytesIO()
     with wave.open(out,'wb') as f:f.setnchannels(1);f.setsampwidth(2);f.setframerate(8000);f.writeframes(b'\x00\x00'*8000)
     return out.getvalue()
-def draft(context):return TourDraft.model_validate({'chapters':[{'order':i+1,'anchor_id':'desk-1' if context['anchors'] else None,'excerpts':[{'source_id':'journal:story','quote':context['sources']['journal:story'][:100]}],'ambience':'quiet'} for i in range(3)]})
-def completion(value):return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content=json.dumps(value),refusal=None))])
+def draft(context,include_photo=True):return TourDraft.model_validate({'journal_reading':{'interpretation':'The entry recalls listening beside the desk; emotion is not explicitly stated.','evidence_quote':context['sources'].get('journal:story','')[:100]},'chapters':[{'order':i+1,'narration':'The wooden desk sits beside the window. Your entry recalls listening to the rain there.','anchor_id':'desk-1' if context['anchors'] else None,'excerpts':[{'source_id':'journal:story','quote':context['sources']['journal:story'][:100]}]+([{'source_id':k,'quote':v[:100]} for k,v in context['sources'].items() if k.startswith('photo:')][:1] if include_photo else []),'ambience':'quiet'} for i in range(3)]})
+def completion(value):
+    value=copy.deepcopy(value)
+    if 'chapters' in value:
+        for c in value['chapters']:c['source_ids']=[e['source_id'] for e in c.pop('excerpts',[])]
+    return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content=json.dumps(value),refusal=None))])
 
 class Contracts(unittest.TestCase):
     def test_fingerprint_ignores_sync_timestamps_but_tracks_actual_edits(self):
         m=memory();base=fingerprint(context_for(m,A,'en'));m['updated_at']='tomorrow';self.assertEqual(base,fingerprint(context_for(m,A,'en')))
         m['story']='A different saved story.';self.assertNotEqual(base,fingerprint(context_for(m,A,'en')))
         self.assertNotEqual(base,fingerprint(context_for(memory(),A,'ko')))
+    def test_saved_scene_is_artistic_context_not_personal_evidence(self):
+        m=memory();m['scene'].update({'title':'Symbolic reading room','environment':'bedroom','mood':'nostalgic'})
+        ctx=context_for(m,A,'en')
+        self.assertTrue(ctx['visualization']['interpretation_only'])
+        self.assertEqual(ctx['visualization']['object_types'],['desk'])
+        self.assertFalse(any(k.startswith('visualization:') for k in ctx['sources']))
+        prior=fingerprint(ctx);m['scene']['environment']='garden'
+        self.assertNotEqual(prior,fingerprint(context_for(m,A,'en')))
     def test_only_valid_existing_anchors_are_spatial_targets(self):
         m=memory();m['scene']['objects'] += [{'id':'bad','position':[True,0,0]},{'id':'far','position':[100,0,0]},{'id':'nan','position':[float('nan'),0,0]}]
         ctx=context_for(m,A,'en');self.assertEqual([a['id'] for a in ctx['anchors']],['desk-1'])
@@ -40,14 +52,25 @@ class Contracts(unittest.TestCase):
     def test_missing_anchors_get_safe_poses_and_no_fabricated_personal_story(self):
         m=memory();m['scene']=None;ctx=context_for(m,A,'en');tour=render_tour(draft(ctx),ctx)
         self.assertIsNone(tour['chapters'][0]['anchor_id']);self.assertEqual(tour['chapters'][0]['camera']['position'],[.25,.1,.45])
-        self.assertIn(m['story'],tour['chapters'][0]['narration'])
+        self.assertNotIn('Take a breath',tour['chapters'][0]['narration'])
     def test_unknown_anchor_invented_quote_or_extra_prose_is_rejected(self):
         ctx=context_for(memory(),A,'en')
         value=draft(ctx);value.chapters[0].anchor_id='invented';self.assertRaises(ValueError,render_tour,value,ctx)
         value=draft(ctx);value.chapters[0].excerpts[0].quote='My grandfather took me there.';self.assertRaises(ValueError,render_tour,value,ctx)
-        value=draft(ctx);ctx['sources']['photo:1']='A model-invented relative.';value.chapters[0].excerpts[0].source_id='photo:1';value.chapters[0].excerpts[0].quote=ctx['sources']['photo:1'];self.assertRaises(ValueError,render_tour,value,ctx)
+        value=draft(ctx);value.chapters[0].narration='Take a deep breath. There is no need to hurry.';self.assertRaises(ValueError,render_tour,value,ctx)
         data=draft(ctx).model_dump();data['narration']='Invented';self.assertRaises(ValueError,TourDraft.model_validate,data)
         value=draft(ctx);value.chapters[0].order=3;self.assertRaises(ValueError,render_tour,value,ctx)
+    def test_evidence_accepts_case_and_typography_but_not_invention(self):
+        from backend.memorycast_schema import copied_excerpt
+        self.assertTrue(copied_excerpt('I used to look for the birds','i used to look for the birds'))
+        self.assertFalse(copied_excerpt('My father watched birds with me','i used to look for the birds'))
+    def test_feeling_interpretation_requires_real_journal_evidence(self):
+        ctx=context_for(memory(),A,'en');value=draft(ctx)
+        value.journal_reading.evidence_quote='I felt grief when my grandfather left.'
+        self.assertRaises(ValueError,render_tour,value,ctx)
+    def test_chapters_cannot_ignore_photo_or_journal(self):
+        ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']='A wooden desk by the window.'
+        value=draft(ctx,include_photo=False);self.assertRaises(ValueError,render_tour,value,ctx)
     def test_private_photos_must_belong_to_this_account_and_memory(self):
         m=memory();m['photos']=[{'path':B+'/'+M+'/p.jpg','type':'image/jpeg'}];self.assertRaises(ValueError,context_for,m,A,'en')
         m['photos'][0]['path']=A+'/'+M+'/../p.jpg';self.assertRaises(ValueError,context_for,m,A,'en')
@@ -57,11 +80,52 @@ class Contracts(unittest.TestCase):
             with self.assertRaises((ValueError,wave.Error,EOFError)):audio_duration(data)
 
 class Providers(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.env=patch.dict(os.environ,{'MEMORYCAST_SCRIPT_PROVIDER':'deepseek'});self.env.start();self.addCleanup(self.env.stop)
+    async def test_openai_script_mode_does_not_require_lablup_access(self):
+        ctx=context_for(memory(),A,'en');create=AsyncMock(return_value=completion(draft(ctx).model_dump()))
+        pipeline=SimpleNamespace(openai=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),deepseek=None,settings=SimpleNamespace(openai_model='existing-openai-model'))
+        with patch.dict(os.environ,{'MEMORYCAST_SCRIPT_PROVIDER':'openai','MEMORYCAST_SCRIPT_MODEL':'existing-openai-model'}):
+            provider=TourProvider(pipeline);self.assertTrue(provider.configured());await provider.script(ctx)
+        self.assertEqual(create.call_args.kwargs['model'],'existing-openai-model')
+    async def test_only_evidence_edited_narration_is_returned(self):
+        ctx=context_for(memory(),A,'en')
+        before=draft(ctx).model_dump();before['chapters'][0]['narration']='Your grandfather waited with you beside the desk every Sunday.'
+        after=draft(ctx).model_dump()
+        create=AsyncMock(side_effect=[completion(before),completion(after)])
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(create.await_count,2)
+        self.assertEqual(json.loads(create.call_args_list[0].kwargs['messages'][1]['content'])['visualization'],ctx['visualization'])
+        self.assertEqual(json.loads(create.call_args_list[1].kwargs['messages'][1]['content'])['visualization'],ctx['visualization'])
+        self.assertNotIn('grandfather',result['chapters'][0]['narration'])
+        self.assertEqual(result['chapters'][0]['evidence'][0]['quote'],ctx['sources']['journal:story'])
     async def test_lablup_uses_existing_model_and_grounded_contract(self):
         ctx=context_for(memory(),A,'en');deep=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(draft(ctx).model_dump())))))
         pipeline=SimpleNamespace(deepseek=deep,openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
         result=await TourProvider(pipeline).script(ctx);self.assertEqual(result['chapters'][0]['anchor_id'],'desk-1')
-        call=deep.chat.completions.create.call_args.kwargs;self.assertEqual(call['model'],'existing-lablup-model');self.assertEqual(call['timeout'],18)
+        call=deep.chat.completions.create.call_args.kwargs;self.assertEqual(call['model'],'existing-lablup-model');self.assertGreater(call['timeout'],0);self.assertLessEqual(call['timeout'],16)
+    async def test_spoken_script_preserves_photo_specific_prose_and_journal_evidence(self):
+        outputs=[]
+        for detail in ['A red chair beside a sunlit window.', 'A blue bicycle against a brick wall.']:
+            ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']=detail
+            value=draft(ctx).model_dump()
+            for c in value['chapters']:
+                c['narration']=detail+' Your journal recalls listening to rain by the wooden desk.'
+                c['excerpts']=[{'source_id':'photo:1','quote':detail},{'source_id':'journal:story','quote':ctx['sources']['journal:story']}]
+            create=AsyncMock(return_value=completion(value))
+            pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+            result=await TourProvider(pipeline).script(ctx)
+            self.assertEqual(result['chapters'][0]['narration'],value['chapters'][0]['narration'])
+            self.assertIn(detail,result['chapters'][1]['narration'])
+            self.assertNotIn('Take a breath',result['chapters'][0]['narration'])
+            outputs.append(result)
+        self.assertNotEqual(outputs[0]['chapters'][0]['narration'],outputs[1]['chapters'][0]['narration'])
+    async def test_photo_evidence_is_required_when_a_photo_was_analyzed(self):
+        ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']='A red chair.'
+        create=AsyncMock(return_value=completion(draft(ctx,include_photo=False).model_dump()))
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        with self.assertRaises(ValueError):await TourProvider(pipeline).script(ctx)
     async def test_saved_photo_vision_reuses_existing_openai_client(self):
         value={'objects':[{'description':'A red synthetic image','location':'center'}],'spatial_layout':'A flat test image','lighting':'Even light','colors':['red'],'uncertainty':'Synthetic test image only'}
         create=AsyncMock(return_value=completion(value))
@@ -168,6 +232,19 @@ class Routes(unittest.TestCase):
             result=self.load().json();self.assertEqual(result['tour']['status'],'ready');self.assertEqual(len(result['tour']['audio']),3)
             self.assertNotIn('context',result['tour']);self.assertNotIn('lease',result['tour']);self.assertFalse(result['stale'])
         self.assertEqual(len(self.provider.calls),4);self.assertEqual(self.create().json()['fresh'],False);self.assertEqual(len(self.provider.calls),4)
+    def test_failed_pre_audio_recovery_does_not_reserve_another_quota_slot(self):
+        id=self.create().json()['tour']['id'];job=self.store.jobs[id];job['status']='failed'
+        recovered={**job,'status':'pending'}
+        self.store.recover_failed=AsyncMock(return_value=recovered)
+        reserve=self.store.tour_rpc
+        async def reject_new(name,params):
+            if name=='mc_reserve':raise AssertionError('Recovery must reuse the reservation')
+            return await reserve(name,params)
+        self.store.tour_rpc=reject_new
+        result=self.create().json()
+        self.assertEqual(result['tour']['id'],id);self.assertFalse(result['fresh'])
+        self.assertEqual(len(self.store.jobs),1)
+        self.assertEqual(self.client.post('/api/memorycast/memories/'+M,headers={'Authorization':'Bearer account-b'},json={'approved':True}).status_code,404)
     def test_saved_korean_tour_reopens_without_a_false_language_edit(self):
         id=self.create(language='ko').json()['tour']['id']
         for _ in range(4):self.step(id)
@@ -211,6 +288,69 @@ class StorageAdapter(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ,{'SUPABASE_URL':'https://existing.supabase.test','SUPABASE_SERVICE_ROLE_KEY':'server-test-only'}):
             async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'signedURL':'https://evil.test/audio'}))) as client:
                 with self.assertRaises(HTTPException):await TourStore(client).signed_audio(A+'/'+M+'/tour/1.wav')
+
+class RecoveryAdapter(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_pre_audio_retry_keeps_the_same_reservation(self):
+        ctx=context_for(memory(),A,'en');ctx['automatic_recoveries']=1
+        old={'id':M,'context':ctx,'status':'failed','next_step':0,'lease':None,
+             'audio_paths':[],'audio_durations':[],'updated_at':'2026-10-31T19:00:00+00:00'}
+        seen=[]
+        def handle(request):
+            seen.append(request.method)
+            if request.method=='GET':return httpx.Response(200,json=[old])
+            body=json.loads(request.content)
+            self.assertNotIn('audio_paths',body)
+            return httpx.Response(200,json=[{**old,**body}])
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                result=await TourStore(client).recover_failed(A,M,ctx,fingerprint(ctx),explicit_retry=True)
+        self.assertEqual(seen,['GET','PATCH']);self.assertEqual(result['id'],M)
+        self.assertEqual(result['status'],'pending')
+
+    async def test_explicit_retry_cannot_reset_uncertain_or_saved_audio(self):
+        for changes in [{'status':'uncertain'},{'audio_paths':['saved.wav']},{'lease':'active'},{'next_step':2}]:
+            old={'id':M,'context':{'photos':[]},'status':'failed','next_step':0,'lease':None,'audio_paths':[],'audio_durations':[],**changes}
+            seen=[]
+            def handle(request):
+                seen.append(request.method);return httpx.Response(200,json=[old])
+            with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    await TourStore(client).recover_failed(A,M,context_for(memory(),A,'en'),'hash',explicit_retry=True)
+            self.assertEqual(seen,['GET'])
+
+    async def test_recovery_reuses_photo_and_reservation_with_atomic_owner_filter(self):
+        ctx=context_for(memory(),A,'en');ctx['photos']=[{'path':A+'/'+M+'/p.png','type':'image/png'}]
+        prior=copy.deepcopy(ctx);prior['sources']['photo:1']='A shuttered window.'
+        old={'id':M,'user_id':A,'memory_id':M,'context':prior,'status':'failed','next_step':1,'lease':None,
+             'audio_paths':[],'audio_durations':[],'updated_at':'2026-10-31T19:00:00+00:00'}
+        seen=[]
+        def handle(request):
+            seen.append(request)
+            if request.method=='GET':return httpx.Response(200,json=[old])
+            body=json.loads(request.content)
+            self.assertEqual(body['context']['sources']['photo:1'],'A shuttered window.')
+            self.assertEqual(body['next_step'],1);self.assertEqual(body['context']['automatic_recoveries'],1)
+            self.assertEqual(request.url.params['user_id'],'eq.'+A)
+            self.assertEqual(request.url.params['status'],'eq.failed')
+            self.assertEqual(request.url.params['lease'],'is.null')
+            self.assertEqual(request.url.params['updated_at'],'eq.'+old['updated_at'])
+            self.assertNotIn('audio_paths',body)
+            return httpx.Response(200,json=[{**old,**body}])
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                result=await TourStore(client).recover_failed(A,M,ctx,fingerprint(ctx))
+        self.assertEqual(result['id'],M);self.assertEqual(result['status'],'pending')
+        self.assertEqual([r.method for r in seen],['GET','PATCH'])
+    async def test_uncertain_audio_started_and_already_recovered_jobs_are_never_reset(self):
+        for changes in [{'status':'uncertain'},{'audio_paths':['saved.wav']},{'next_step':2},{'context':{'photos':[],'automatic_recoveries':1}}]:
+            old={'id':M,'context':{'photos':[]},'status':'failed','next_step':0,'lease':None,'audio_paths':[],'audio_durations':[],**changes}
+            seen=[]
+            def handle(request):
+                seen.append(request.method);return httpx.Response(200,json=[old])
+            with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    await TourStore(client).recover_failed(A,M,context_for(memory(),A,'en'),'hash')
+            self.assertEqual(seen,['GET'])
 
 class StorageDiagnostics(unittest.IsolatedAsyncioTestCase):
     async def test_missing_rpc_has_specific_safe_error(self):

@@ -65,34 +65,62 @@ async def public_job(accounts, user_id, job):
         tour_audio[chapter['id']] = accounts.url+'/storage/v1'+signed
     return {**job, 'world': world, 'assetExpiresIn': 3600, 'tourAudio':tour_audio}
 
+async def resolve_world(accounts, user_id, memory_id):
+    """Read both installed binding versions before considering a new reservation."""
+    params = {'p_user_id': user_id, 'p_memory_id': memory_id}
+    modern = None
+    try:
+        modern = await accounts.rpc('mv_journal_world', params)
+    except HTTPException as error:
+        if error.status_code != 503: raise
+    if modern and modern.get('status') not in ('none', 'legacy_recovery'):
+        if modern['status'] in ('pending', 'submitting'):
+            # Serverless deployments cannot rely on a separate durable worker.
+            updated = await get_job(modern['job_id'], user_id, accounts, journal=True)
+            modern = {**modern, **updated}
+        return await public_job(accounts, user_id, modern)
+    try:
+        saved = await accounts.rpc('mv_world_memory', params)
+    except HTTPException as error:
+        if error.status_code != 503 or modern is None: raise
+        return modern
+    job = saved.get('job')
+    metadata = saved.get('world') or {}
+    if not job and metadata.get('jobId') and metadata.get('source') == 'worldlabs':
+        # An older tab may have stored the result before journal bindings existed.
+        # The job RPC verifies ownership; never trust browser-supplied asset URLs.
+        job = await get_job(metadata['jobId'], user_id, accounts)
+        if (job.get('world') or {}).get('id') != metadata.get('id'):
+            raise HTTPException(409, 'This saved world needs ownership recovery. No new world was generated.')
+    if not job:
+        if metadata.get('id') and metadata.get('source') not in ('sample', 'mock'):
+            return {'status': 'legacy_recovery', 'memory_id': memory_id}
+        return modern or {'status': 'none', 'memory_id': memory_id}
+    if job['status'] in ('pending', 'submitting'):
+        job = await get_job(job['job_id'], user_id, accounts)
+    job = {**job, 'memory_id': memory_id, 'revision': 0}
+    if (job.get('world') or {}).get('storagePaths'):
+        return await public_job(accounts, user_id, job)
+    return job
+
 @router.get('/api/journal/{memory_id}/world')
 async def read_world(memory_id: str, user_id=Depends(authenticated_journal_user), accounts=Depends(get_accounts)):
-    memory_id=memory_uuid(memory_id)
-    try:job = await accounts.rpc('mv_journal_world', {'p_user_id': user_id, 'p_memory_id': memory_id})
-    except HTTPException as error:
-        if error.status_code!=503:raise
-        # Production already has the journal-linked 012 RPCs. Resolve the saved
-        # job there when the newer optional binding migration is absent.
-        saved=await accounts.rpc('mv_world_memory',{'p_user_id':user_id,'p_memory_id':memory_id})
-        job=saved.get('job')
-        if not job:return {'status':'none','memory_id':memory_id}
-        if job['status'] in ('pending','submitting'):job=await get_job(job['job_id'],user_id,accounts)
-        return {**job,'memory_id':memory_id,'revision':0}
-    return await public_job(accounts, user_id, job)
+    return await resolve_world(accounts, user_id, memory_uuid(memory_id))
 
 @router.post('/api/journal/{memory_id}/world', status_code=202)
 async def relive(memory_id: str, request: ReliveRequest, user_id=Depends(authenticated_journal_user), accounts=Depends(get_accounts)):
     memory_id = memory_uuid(memory_id)
-    # Existing authentication is reused; journal generation additionally requires Google.
-    # Supabase verifies the session before any ownership or quota operation.
+    # Supabase verifies the existing session before ownership or quota operations.
     params = {'p_user_id': user_id, 'p_memory_id': memory_id}
-    try:existing = await accounts.rpc('mv_journal_world', params)
+    existing = await resolve_world(accounts, user_id, memory_id)
+    # Saved worlds and pending reservations reopen even after the budget is spent.
+    if existing['status'] != 'none': return existing
+    try:
+        await accounts.rpc('mv_journal_world', params)
     except HTTPException as error:
-        if error.status_code!=503:raise
-        job=await create_memory_world(memory_id,request.approved,request.photoIndex,user_id,accounts)
-        return {**job,'memory_id':memory_id,'revision':0}
-    # Saved/pending/failed/unknown jobs are reused even when new generation is off.
-    if existing['status'] != 'none': return await public_job(accounts, user_id, existing)
+        if error.status_code != 503: raise
+        job = await create_memory_world(memory_id, request.approved, request.photoIndex, user_id, accounts)
+        return {**job, 'memory_id': memory_id, 'revision': 0}
     if not request.approved: raise HTTPException(400, 'Confirm sending this memory photograph to World Labs.')
     enabled()
     if os.getenv('WORLD_ASSET_RETENTION_APPROVED', 'false').lower() != 'true':

@@ -13,7 +13,7 @@ export async function memorycastRequest(path, { method = 'GET', body, signal, cl
       memorycast_schema_unavailable: 'Podcast database setup is incomplete. Ask the owner to verify the MemoryCast migration.',
       memorycast_storage_unavailable: 'Podcast storage is temporarily unavailable. Retry loading your saved tour.',
     }
-    const message = messages[code] || (response.status === 503 ? 'The podcast service is unavailable. Retry loading; your journal entry is still saved.' : response.status === 401 ? 'Please sign in again.' : 'Your private podcast could not be loaded. Retry without uploading any audio.')
+    const message = messages[code] || (response.status === 503 ? 'The podcast service is unavailable. Retry loading; your journal entry is still saved.' : response.status === 401 ? 'Please sign in again.' : response.status === 429 ? 'Your podcast creation allowance has been reached. You can still load and replay saved recordings.' : response.status === 409 ? 'This entry has changed. Reload the saved podcast before choosing whether to update it.' : response.status === 422 ? 'The saved memory metadata needs attention. Your recording has not been regenerated.' : 'Your private podcast could not be loaded. Retry without uploading any audio.')
     const error = new Error(message); error.status = response.status; error.code = code
     throw error
   }

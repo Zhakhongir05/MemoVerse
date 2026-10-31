@@ -8,9 +8,9 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test src/integration/*.test.js src/ui/*.test.js src/enhancements/*.test.js",
+    "test": "node --test src/integration/*.test.js src/ui/*.test.js src/enhancements/*.test.js src/sensory/*.test.js",
     "test:browser": "playwright test",
-    "test:database": "node --test ../backend/tests/world_allowance.test.mjs ../backend/tests/journal_worlds.test.mjs ../backend/tests/memorycast_database.test.mjs ../backend/tests/journal_world_jobs.test.mjs ../backend/tests/rejected_world_slots.test.mjs ../backend/tests/review_hold_restoration.test.mjs ../backend/tests/world_model_upgrade.test.mjs"
+    "test:database": "node --test ../backend/tests/world_allowance.test.mjs ../backend/tests/journal_worlds.test.mjs ../backend/tests/memorycast_database.test.mjs ../backend/tests/journal_world_jobs.test.mjs ../backend/tests/rejected_world_slots.test.mjs ../backend/tests/review_hold_restoration.test.mjs ../backend/tests/world_model_upgrade.test.mjs ../backend/tests/favorites_database.test.mjs ../backend/tests/production_world_limits.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

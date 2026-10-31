@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementResponse, parseEnhancementsForWorld } from './schema.js'
+import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementResponse, parseEnhancementsForWorld, placeEnhancementsFromPhoto, spreadEnhancementsInRoom } from './schema.js'
 
 const clone = () => structuredClone(DEMO_ENHANCEMENT_RESPONSE)
 
@@ -103,4 +103,101 @@ test('centers placements when the room is narrower than the margin', () => {
   const [enhancement] = parseEnhancementResponse(clone()).enhancements
   const [fitted] = fitEnhancementsToBounds([{ ...enhancement, position: [9, 1, 9] }], bounds)
   assert.deepEqual(fitted.position, [0.05, 1, 0.05])
+})
+
+test('keeps a valid photo position and drops unusable ones', () => {
+  const payload = clone()
+  payload.enhancements[0].photoPosition = [0.25, 0.75]
+  payload.enhancements[1].photoPosition = ['x', 2]
+  payload.enhancements[2].photoPosition = [2, -1]
+  const parsed = parseEnhancementResponse(payload).enhancements
+
+  assert.deepEqual(parsed[0].photoPosition, [0.25, 0.75])
+  assert.equal(parsed[1].photoPosition, null)
+  assert.deepEqual(parsed[2].photoPosition, [1, 0])
+})
+
+test('maps photo positions onto the room floor rectangle', () => {
+  const bounds = { min: { x: -10, y: -1, z: -20 }, max: { x: 10, y: 2, z: 4 } }
+  const list = [
+    { id: 'left-far', photoPosition: [0, 0], position: [0, 1, 0] },
+    { id: 'right-near', photoPosition: [1, 1], position: [0, 1, 0] },
+    { id: 'plain', photoPosition: null, position: [3, 1, -3] },
+  ]
+
+  const placed = placeEnhancementsFromPhoto(list, bounds)
+
+  assert.deepEqual(placed[0].position, [-10 + 0.15, 1, -20 + 0.15])
+  assert.deepEqual(placed[1].position, [10 - 0.15, 1, 4 - 0.15])
+  assert.deepEqual(placed[2], list[2])
+  assert.deepEqual(placeEnhancementsFromPhoto(list, null), list)
+})
+
+test('spreads guesses without a photo position away from the mapped ones', () => {
+  const bounds = { min: { x: -5, y: -1, z: -5 }, max: { x: 5, y: 2, z: 5 } }
+  const list = [
+    { id: 'mapped', photoPosition: [0, 0], position: [0, 1, 0] },
+    { id: 'guess-a', photoPosition: null, position: [0, 1, 0] },
+    { id: 'guess-b', photoPosition: null, position: [0.1, 1, 0.1] },
+  ]
+
+  const placed = placeEnhancementsFromPhoto(list, bounds)
+  const [mapped, guessA, guessB] = placed
+
+  assert.deepEqual(mapped.position, [-5 + 0.15, 1, -5 + 0.15])
+  // The guesses no longer sit on top of each other or on the mapped item.
+  assert.notDeepEqual(guessA.position, guessB.position)
+  assert.notDeepEqual([guessA.position[0], guessA.position[2]], [mapped.position[0], mapped.position[2]])
+})
+
+test('spreads a pile of near-origin guesses across the room', () => {
+  const bounds = { min: { x: -5, y: -1, z: -8 }, max: { x: 5, y: 2.5, z: 4 } }
+  const pile = [
+    { id: 'a', anchor: 'floor', position: [-0.2, 0, -0.1] },
+    { id: 'b', anchor: 'floor', position: [0.3, 0, 0.2] },
+  ]
+
+  const spread = spreadEnhancementsInRoom(pile, bounds)
+
+  // Centred on the room and separated along both axes.
+  assert.ok(spread[0].position[0] < spread[1].position[0])
+  assert.ok(spread[0].position[2] < spread[1].position[2])
+  assert.equal(spread[0].position[1], 0)
+  for (const item of spread) {
+    assert.ok(item.position[0] >= -5 + 0.15 && item.position[0] <= 5 - 0.15)
+    assert.ok(item.position[2] >= -8 + 0.15 && item.position[2] <= 4 - 0.15)
+  }
+})
+
+test('spreads only up to part of the room and never shrinks a fitted layout', () => {
+  const bounds = { min: { x: -10, y: 0, z: -10 }, max: { x: 10, y: 3, z: 10 } }
+  const wide = [
+    { id: 'a', anchor: 'floor', position: [-8, 0, -8] },
+    { id: 'b', anchor: 'floor', position: [8, 0, 8] },
+  ]
+  assert.deepEqual(spreadEnhancementsInRoom(wide, bounds), wide)
+
+  const pile = [
+    { id: 'a', anchor: 'floor', position: [0, 0, 0] },
+    { id: 'b', anchor: 'floor', position: [0.5, 0, 0.5] },
+  ]
+  const spread = spreadEnhancementsInRoom(pile, bounds)
+  const span = spread[1].position[0] - spread[0].position[0]
+  assert.ok(span > 0.5 && span < 20)
+})
+
+test('never moves user-adjusted placements or spreads a single object', () => {
+  const bounds = { min: { x: -5, y: -1, z: -8 }, max: { x: 5, y: 2.5, z: 4 } }
+  const mixed = [
+    { id: 'a', anchor: 'floor', position: [0, 0, 0] },
+    { id: 'b', anchor: 'floor', position: [0.4, 0, 0.3] },
+    { id: 'pinned', anchor: 'none', position: [2, 1, -3] },
+  ]
+  const spread = spreadEnhancementsInRoom(mixed, bounds)
+  assert.deepEqual(spread[2], mixed[2])
+  assert.notDeepEqual(spread[0].position, mixed[0].position)
+
+  const single = [{ id: 'a', anchor: 'floor', position: [0, 0, 0] }]
+  assert.deepEqual(spreadEnhancementsInRoom(single, bounds), single)
+  assert.deepEqual(spreadEnhancementsInRoom(mixed, null), mixed)
 })

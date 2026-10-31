@@ -8,7 +8,7 @@ from backend.main import app
 from backend import worlds
 from backend.world_accounts import SupabaseWorlds,get_accounts
 accounts=SupabaseWorlds()
-accounts.url='http://127.0.0.1:8036'  # Test-only override; production requires HTTPS.
+accounts.url='http://127.0.0.1:'+os.getenv('MEMOVERSE_TEST_SUPABASE_PORT','8036')  # Test-only override; production requires HTTPS.
 app.dependency_overrides[get_accounts]=lambda:accounts
 submitted=[];polls={}
 async def fake_provider(method,path,body=None):
