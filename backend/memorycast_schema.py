@@ -45,6 +45,7 @@ class TourRequest(StrictModel):
     language: Literal['en','ko']='en'
     approved: bool=False
     regenerate: bool=False
+    retry_failed: bool=False
 
 MOODS={'Nostalgic','Joyful','Peaceful','Grateful','Loved','Excited','Hopeful','Bittersweet','Melancholic'}
 

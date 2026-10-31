@@ -55,7 +55,8 @@ async def create_tour(memory_id:UUID,body:TourRequest,user=Depends(authenticated
     previous=await store.tour_rpc('mc_read',{'p_user':user,'p_memory':str(memory_id),'p_tour':None})
     if not previous.get('enabled'):raise HTTPException(503,'Podcast preparation is temporarily unavailable.')
     if previous.get('tour',{} ) and previous['tour']['status']=='failed':
-        recovered=await store.recover_failed(user,str(memory_id),context,fingerprint(context))
+        recovery_options={'explicit_retry':True} if body.retry_failed else {}
+        recovered=await store.recover_failed(user,str(memory_id),context,fingerprint(context),**recovery_options)
         if recovered:return {'tour':public_tour(recovered),'fresh':False}
     result=await store.tour_rpc('mc_reserve',{'p_user':user,'p_memory':str(memory_id),'p_id':str(uuid4()),'p_hash':fingerprint(context),'p_context':context,'p_regenerate':body.regenerate})
     return {'tour':public_tour(result['tour']),'fresh':result['fresh']}

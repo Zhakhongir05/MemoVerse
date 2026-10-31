@@ -11,7 +11,7 @@ function publish(id,result,error){for(const callback of listeners.get(id)||[])ca
 export const pendingPodcast = memoryId => running.get(memoryId)
 // Share one creation sequence across world preparation and the player. The server
 // reservation and leases also deduplicate reloads and requests from other devices.
-export function preparePodcast(memoryId, request = memorycastRequest, { existingOnly = false } = {}) {
+export function preparePodcast(memoryId, request = memorycastRequest, { existingOnly = false, retryFailed = false } = {}) {
   if (running.has(memoryId)) return running.get(memoryId)
   const task = (async () => {
     let result = await request('/memories/' + memoryId)
@@ -21,7 +21,7 @@ export function preparePodcast(memoryId, request = memorycastRequest, { existing
     if (!tour && existingOnly) return result
     if (!result.generation_enabled) return result
     if (!tour || tour.status==='failed') ({ tour } = await request('/memories/' + memoryId, {
-      method: 'POST', body: { approved: true, language: 'en', regenerate: false },
+      method: 'POST', body: { approved: true, language: 'en', regenerate: false, ...(retryFailed ? { retry_failed: true } : {}) },
     }))
     for (let step = 0; step < 11 && tour.status === 'pending'; step++) {
       const next = await request('/tours/' + tour.id + '/advance', { method: 'POST' })

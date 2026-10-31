@@ -290,6 +290,34 @@ class StorageAdapter(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(HTTPException):await TourStore(client).signed_audio(A+'/'+M+'/tour/1.wav')
 
 class RecoveryAdapter(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_pre_audio_retry_keeps_the_same_reservation(self):
+        ctx=context_for(memory(),A,'en');ctx['automatic_recoveries']=1
+        old={'id':M,'context':ctx,'status':'failed','next_step':0,'lease':None,
+             'audio_paths':[],'audio_durations':[],'updated_at':'2026-10-31T19:00:00+00:00'}
+        seen=[]
+        def handle(request):
+            seen.append(request.method)
+            if request.method=='GET':return httpx.Response(200,json=[old])
+            body=json.loads(request.content)
+            self.assertNotIn('audio_paths',body)
+            return httpx.Response(200,json=[{**old,**body}])
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                result=await TourStore(client).recover_failed(A,M,ctx,fingerprint(ctx),explicit_retry=True)
+        self.assertEqual(seen,['GET','PATCH']);self.assertEqual(result['id'],M)
+        self.assertEqual(result['status'],'pending')
+
+    async def test_explicit_retry_cannot_reset_uncertain_or_saved_audio(self):
+        for changes in [{'status':'uncertain'},{'audio_paths':['saved.wav']},{'lease':'active'},{'next_step':2}]:
+            old={'id':M,'context':{'photos':[]},'status':'failed','next_step':0,'lease':None,'audio_paths':[],'audio_durations':[],**changes}
+            seen=[]
+            def handle(request):
+                seen.append(request.method);return httpx.Response(200,json=[old])
+            with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    await TourStore(client).recover_failed(A,M,context_for(memory(),A,'en'),'hash',explicit_retry=True)
+            self.assertEqual(seen,['GET'])
+
     async def test_recovery_reuses_photo_and_reservation_with_atomic_owner_filter(self):
         ctx=context_for(memory(),A,'en');ctx['photos']=[{'path':A+'/'+M+'/p.png','type':'image/png'}]
         prior=copy.deepcopy(ctx);prior['sources']['photo:1']='A shuttered window.'

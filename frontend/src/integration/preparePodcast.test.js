@@ -48,3 +48,17 @@ test('drafts without a world or reservation are never narrated by backfill',asyn
  await preparePodcast('draft',async(_path,options={})=>{if(options.method==='POST')writes++;return {generation_enabled:true,tour:null}}, {existingOnly:true})
  assert.equal(writes,0)
 })
+
+test('explicit podcast action retries its reservation without any world request',async()=>{
+ const calls=[];let ready=false
+ const result=await preparePodcast('manual-podcast',async(path,options={})=>{
+  calls.push({path,options})
+  if(path.endsWith('/advance')){ready=true;return {advanced:true,tour:{id:'saved-tour',status:'ready'}}}
+  if(options.method==='POST')return {tour:{id:'saved-tour',status:'pending'}}
+  return {generation_enabled:true,tour:{id:'saved-tour',status:ready?'ready':'failed'}}
+ },{retryFailed:true})
+ assert.equal(result.tour.status,'ready')
+ assert.equal(calls.find(call=>call.options.body)?.options.body.retry_failed,true)
+ assert.ok(calls.every(call=>!call.path.includes('world')))
+ assert.equal(calls.find(call=>call.options.body).options.body.regenerate,false)
+})

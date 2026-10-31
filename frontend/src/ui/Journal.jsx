@@ -10,6 +10,7 @@ import ImmersiveMemory from './ImmersiveMemory'
 import SpeechInput from './SpeechInput.jsx'
 import JournalHome from './JournalHome.jsx'
 import RelivePreparation from './RelivePreparation'
+import MemoryPodcast from './MemoryPodcast.jsx'
 import PhotoPlanInfo from './PhotoPlanInfo'
 import GenerationPlans from './GenerationPlans.jsx'
 import { cachedFavorites, setFavorite, syncFavorites } from './favorites.js'
@@ -343,6 +344,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
             if(!user){onSignIn?.();return}
             rememberWorld(selected.id);setGenerationRequest(crypto.randomUUID());setView('prepare')
           }}>{selected.world?.source==='worldlabs' ? 'Enter Memory World ✧' : 'Create 3D world'}</button></div>
+          {user && <MemoryPodcast key={selected.id} memory={selected} user={user} allowCreate syncBusy={syncing || saving} />}
         </div></div></section>}
 
     {view === 'prepare' && selected && <RelivePreparation generationRequest={generationRequest} key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => {clearWorldLocation();setView('detail')}} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
