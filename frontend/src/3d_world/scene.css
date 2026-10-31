@@ -1,0 +1,308 @@
+/* Styles for the World Labs hybrid scene when it is mounted inside the
+   Dashboard's preview panel. Scoped to .mv-hybrid-scene so nothing leaks into
+   the rest of the studio UI. */
+
+.mv-hybrid-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #17171b;
+}
+
+.mv-hybrid-scene .world-host,
+.mv-hybrid-scene .world-host > div {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.mv-hybrid-scene .world-host.immersive-world {
+  position: relative;
+}
+
+.mv-hybrid-scene button {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  border: 1px solid #f5c6ad33;
+  background: #241b1add;
+  color: #f8dfb2;
+  border-radius: 7px;
+  padding: 7px 10px;
+  backdrop-filter: blur(10px);
+}
+
+.mv-hybrid-scene button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.mv-hybrid-scene button[aria-pressed='true'] {
+  background: #f3b76a;
+  color: #241b1a;
+  border-color: #f3b76a;
+}
+
+.mv-hybrid-scene :focus-visible {
+  outline: 2px solid #f8dfb2;
+  outline-offset: 2px;
+}
+
+.mv-hybrid-scene .atmosphere-wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  transition: background 1.2s;
+  background: radial-gradient(ellipse at center, transparent 35%, #24150b55 100%),
+    linear-gradient(#f7b9630b, #c18a4c13);
+  mix-blend-mode: soft-light;
+}
+
+.mv-hybrid-scene .world-host.joyful .atmosphere-wash {
+  background: linear-gradient(#ffeb9d18, #b8e5b509);
+}
+
+.mv-hybrid-scene .world-host.melancholic .atmosphere-wash {
+  background: linear-gradient(#5b84bd30, #4b587b25);
+}
+
+.mv-hybrid-scene .sense-controls {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* .world-host > div forces 100% width/height; keep the bar hugging its content. */
+.mv-hybrid-scene .world-host > .sense-controls {
+  width: auto !important;
+  height: auto !important;
+}
+
+.mv-hybrid-scene .sense-controls button {
+  text-transform: capitalize;
+  background: #241b1add;
+}
+
+.mv-hybrid-scene .world-tools {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  width: min(310px, calc(100% - 24px));
+  max-height: 52%;
+  overflow: auto;
+  background: #241b1aed;
+  color: #f8e7d2;
+  border: 1px solid #f5c6ad26;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 12px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px #0006;
+}
+
+.mv-hybrid-scene .world-tools summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: #f3b76a;
+  padding-bottom: 8px;
+}
+
+.mv-hybrid-scene .world-tools p {
+  margin: 0 0 8px;
+}
+
+.mv-hybrid-scene .world-tools label {
+  display: block;
+  margin: 8px 0;
+}
+
+.mv-hybrid-scene .world-tools textarea {
+  display: block;
+  resize: vertical;
+  width: 100%;
+  background: #17100d;
+  color: #f8e7d2;
+  border: 1px solid #f5c6ad33;
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.mv-hybrid-scene .world-tools input:not([type='checkbox']) {
+  width: 100%;
+}
+
+.mv-hybrid-scene .world-tools input[type='file'] {
+  font-size: 11px;
+  color: #f8e7d2;
+}
+
+.mv-hybrid-scene .world-tools input[type='checkbox'] {
+  accent-color: #f3b76a;
+}
+
+.mv-hybrid-scene .world-tools img {
+  width: 100%;
+  max-height: 150px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.mv-hybrid-scene .world-tools audio {
+  width: 100%;
+  height: 34px;
+}
+
+.mv-hybrid-scene .world-tools h3 {
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+.mv-hybrid-scene .world-tools button {
+  margin: 4px 4px 0 0;
+}
+
+.mv-hybrid-scene .anchor-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.mv-hybrid-scene .local-note {
+  opacity: 0.7;
+  margin-top: 8px !important;
+}
+
+.mv-hybrid-scene .enhancement-panel {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 4;
+  width: min(300px, calc(100% - 24px));
+  max-height: 52%;
+  overflow: auto;
+  background: #241b1aed;
+  color: #f8e7d2;
+  border: 1px solid #f5c6ad26;
+  border-radius: 10px;
+  padding: 14px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 40px #0006;
+  font-size: 12px;
+}
+
+.mv-hybrid-scene .enhancement-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mv-hybrid-scene .enhancement-panel h2 {
+  font-size: 16px;
+  margin: 2px 0 0;
+  color: #f3b76a;
+}
+
+.mv-hybrid-scene .enhancement-eyebrow {
+  font-size: 8px;
+  letter-spacing: 1.8px;
+  color: #f3b76a;
+  margin: 0 !important;
+}
+
+.mv-hybrid-scene .enhancement-panel button {
+  font-size: 11px;
+  padding: 6px 9px;
+  margin: 3px 3px 0 0;
+}
+
+.mv-hybrid-scene .enhancement-modes {
+  margin-bottom: 8px;
+}
+
+.mv-hybrid-scene .enhancement-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 8px 0;
+}
+
+.mv-hybrid-scene .enhancement-list button {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+
+.mv-hybrid-scene .enhancement-list small {
+  opacity: 0.7;
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.mv-hybrid-scene .enhancement-story {
+  border-top: 1px solid #f5c6ad22;
+  margin-top: 10px;
+  padding-top: 10px;
+}
+
+.mv-hybrid-scene .enhancement-story h3 {
+  font-size: 14px;
+  margin: 0 0 6px;
+  color: #f3b76a;
+}
+
+.mv-hybrid-scene .enhancement-story p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mv-hybrid-scene .enhancement-meta {
+  font-size: 10px;
+  opacity: 0.7;
+  text-transform: capitalize;
+}
+
+.mv-hybrid-scene .enhancement-hint {
+  font-size: 11px;
+  opacity: 0.75;
+  line-height: 1.5;
+  margin: 6px 0 0 !important;
+}
+
+.mv-hybrid-scene .enhancement-error {
+  color: #ffb7ad;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .mv-hybrid-scene .enhancement-panel {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 40%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mv-hybrid-scene .atmosphere-wash {
+    transition: none;
+  }
+}
