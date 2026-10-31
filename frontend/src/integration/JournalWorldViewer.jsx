@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import '../3d_world/scene.css'
 import './journalWorld.css'
-import { journalWorldRequest, saveJournalExperience } from './journalWorldApi.js'
+import { isMemoryWorld } from './savedWorld.js'
+import { waitForJournalWorld, saveJournalExperience } from './journalWorldApi.js'
 const Viewer = lazy(() => import('./WorldLabsViewer.jsx'))
 
 export default function JournalWorldViewer(props) {
@@ -11,7 +12,9 @@ export default function JournalWorldViewer(props) {
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
-    const read = () => journalWorldRequest(props.memory.id, { signal: controller.signal }).then(value => {
+    setJob(null); setError('')
+    const read = () => waitForJournalWorld(props.memory.id, { signal: controller.signal, onStatus: value => { if (!controller.signal.aborted) setJob(value) } }).then(value => {
+      if (value.status === 'succeeded' && !isMemoryWorld(value.world)) throw new Error('Saved 3D assets are unavailable. Your memory has not been regenerated.')
       if (!controller.signal.aborted) { setJob(value); setError('') }
     }).catch(error => { if (!controller.signal.aborted) setError(error.message) })
     read()
@@ -29,7 +32,9 @@ export default function JournalWorldViewer(props) {
     finally { setSaving(false) }
   }
   if (error) return <p role="alert">{error} Reopen this memory to retry access. No new world has been generated.</p>
+  if (job && !['pending', 'submitting', 'succeeded'].includes(job.status)) return <p role="alert">This memory’s 3D world is not ready. Open the memory to check its saved status.</p>
   if (job?.status !== 'succeeded') return <p role="status">Opening saved world…</p>
-  const chapter = props.activeStep === null ? null : job.guided_tour?.chapters?.[props.activeStep]
-  return <div className="mv-hybrid-scene journal-world-viewer"><p className="journal-world-feedback" role="status">{saved}</p>{chapter && <section className="journal-world-tour" aria-label="Saved guided narration"><p>Saved {job.guided_tour.source === 'ai' ? 'AI-generated' : 'sample'} narration</p><p>{chapter.narration}</p>{job.tourAudio?.[chapter.id] && <audio key={chapter.id} controls preload="none" src={job.tourAudio[chapter.id]} />}</section>}<Suspense fallback={<p>Loading world viewer…</p>}><Viewer key={props.memory.id} {...props} world={job.world} enhancementResponse={job.enhancements || null} savedAnchors={job.anchors || []} onSaveExperience={save} /></Suspense></div>
+  if (!isMemoryWorld(job.world)) return <p role="alert">Saved 3D assets are unavailable. Your memory has not been regenerated.</p>
+  const chapter = props.previewOnly || props.activeStep === null ? null : job.guided_tour?.chapters?.[props.activeStep]
+  return <div className="mv-hybrid-scene journal-world-viewer"><p className="journal-world-feedback" role="status">{saved}</p>{chapter && <section className="journal-world-tour" aria-label="Saved guided narration"><p>Saved {job.guided_tour.source === 'ai' ? 'AI-generated' : 'sample'} narration</p><p>{chapter.narration}</p>{job.tourAudio?.[chapter.id] && <audio key={chapter.id} controls preload="none" src={job.tourAudio[chapter.id]} />}</section>}<Suspense fallback={<p>Loading world viewer…</p>}><Viewer key={props.memory.id} {...props} world={job.world} enhancementResponse={job.enhancements || null} savedAnchors={job.anchors || []} onSaveExperience={props.previewOnly ? undefined : save} /></Suspense></div>
 }

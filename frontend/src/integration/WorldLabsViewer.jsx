@@ -99,11 +99,11 @@ function settleInsideRoom(mesh,list){
 // Senses are remembered, never emitted: the card always shows the evidence.
 const SENSE_LABELS = { sound: 'Sound', scent: 'Scent remembered', temperature: 'Temperature remembered', texture: 'Touch remembered', light: 'Light remembered' };
 
-export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null, mode = 'explore' }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null, mode = 'explore', previewOnly = false }){
  // Only the saved sample room ships a predefined furniture demo. Journal worlds use
  // their saved manifest when one exists, otherwise they propose furniture once from
  // the bound photograph and cache the result on this device.
- const showTools = !embedded || mode === 'edit';
+ const showTools = !previewOnly && (!embedded || mode === 'edit');
  const persistentExperience=typeof onSaveExperience==='function';
  const response = enhancementResponse ?? (!persistentExperience && world.id === existingWorld.id ? DEMO_ENHANCEMENT_RESPONSE : null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState({list:[],baseline:[],error:''});
@@ -118,7 +118,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
  const [memory,setMemory]=useState(''),[moodSetting,setMoodSetting]=useState('nostalgic');
  // A host (the Dashboard's SenseShift radios) can drive the mood; otherwise use the local buttons.
  const mood=externalMood?externalMood.toLowerCase():moodSetting;
- const [journey,setJourney]=useState(1),[ambience,setAmbience]=useState(false),[audioError,setAudioError]=useState('');
+ const [journey,setJourney]=useState(previewOnly ? 0 : 1),[ambience,setAmbience]=useState(false),[audioError,setAudioError]=useState('');
  const [selectedEnhancement,setSelectedEnhancement]=useState(null);
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
  const [colliderMesh,setColliderMesh]=useState(null);
@@ -147,6 +147,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
      setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
      setEnhancementSource('provided');setEnhancementStatus('Supplied placements · not newly AI-generated.');return;
     }
+    if(previewOnly){setEnhancementStatus('Saved world preview.');return;}
     // A journal world without saved placements may still propose furniture on first
     // open; device cache keeps later opens from calling the provider again.
     if(!imageUrl){setEnhancementStatus(persistentExperience?'No photograph is bound to this saved world; furniture stays empty.':'No photograph supplied; furniture stays empty.');return;}
@@ -175,7 +176,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   }
   load();
   return ()=>{active=false;controller.abort();};
- },[response,world.id,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements,persistentExperience]);
+ },[response,world.id,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements,persistentExperience,previewOnly]);
  // Sensory cues are deterministic and read only from the saved entry. They are
  // recomputed on open, so nothing new is stored and no provider is called.
  useEffect(()=>{savedAnchorsRef.current=savedAnchors;},[savedAnchors]);
@@ -183,6 +184,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   const controller=new AbortController();
   // oxlint-disable-next-line react/set-state-in-effect
   setSensoryCues([]);setSenseCard(null);setPassIndex(-1);
+  if(previewOnly)return()=>controller.abort();
   const body=sensoryRequestFromMemory(savedMemory||{});
   const known=new Set(body.anchors.map(anchor=>anchor.id));
   for(const anchor of savedAnchorsRef.current||[]){
@@ -195,7 +197,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    .then(payload=>{if(!controller.signal.aborted)setSensoryCues(parseSensoryResponse(payload));})
    .catch(()=>{if(!controller.signal.aborted)setSensoryCues([]);});
   return()=>controller.abort();
- },[savedMemory]);
+ },[savedMemory,previewOnly]);
  useEffect(()=>{
   if(!cacheInfo||!['ai','saved'].includes(enhancementSource)||needsFit.current)return;
   let active=true;
@@ -305,7 +307,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
  const senseWarmth=senseCard?.kind==='temperature'?(/cold|chill|frost|winter|snow|ice|cool/.test(senseCard.label.toLowerCase())?'cool':'warm'):null;
- return <Boundary><div data-world-state={status.startsWith('Loaded') ? 'ready' : 'loading'} data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} data-sense={senseWarmth||undefined} className={`world-host immersive-world ${mood} ${embedded && mode !== 'edit'?'mv-clean-viewer':''}`}>
+ return <Boundary><div data-world-preview={previewOnly ? 'true' : undefined} data-world-state={status.startsWith('Loaded') ? 'ready' : 'loading'} data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} data-sense={senseWarmth||undefined} className={`world-host immersive-world ${mood} ${embedded && mode !== 'edit'?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
