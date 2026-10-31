@@ -93,6 +93,9 @@ class EnhancementManifest(ContractModel):
     source: Literal['ai','user','demo']
     fallback: bool
     requiresReview: bool = True
+    # Counts only, returned when the caller asks for ?diagnostics=1. Never
+    # contains model output, image data or user text.
+    diagnostics: Optional[dict] = None
 
     @model_validator(mode='after')
     def consistent(self):
@@ -136,7 +139,7 @@ def raw_capture_to_render(position):
     return (x,-y,-z)
 
 
-def manifest(context, proposals, source, fallback=False):
+def manifest(context, proposals, source, fallback=False, diagnostics=None):
     evidence={e.id:e for e in context.evidence}
     objects=[]
     for p in proposals:
@@ -161,7 +164,7 @@ def manifest(context, proposals, source, fallback=False):
         objects.append(p)
     return EnhancementManifest(worldId=context.worldId,enhancements=objects,
         unitsPerMeter=context.calibration.units() if context.calibration else None,
-        scaleStatus='calibrated' if context.calibration else 'uncalibrated',source=source,fallback=fallback)
+        scaleStatus='calibrated' if context.calibration else 'uncalibrated',source=source,fallback=fallback,diagnostics=diagnostics)
 
 router=APIRouter()
 
@@ -241,7 +244,7 @@ def canonical_placement(raw):
     return {**raw, 'type': kind, 'assetId': ASSET_FOR_TYPE[kind]}
 
 
-def parse_photo_analysis(result,limit=20):
+def parse_photo_analysis(result,limit=20,stats=None):
     """One unusable observation must not discard the whole scene description."""
     data=completion_payload(result)
     raw=data.get('objects')
@@ -249,6 +252,10 @@ def parse_photo_analysis(result,limit=20):
     for item in raw if isinstance(raw,list) else []:
         try:objects.append(VisibleObject.model_validate(item))
         except ValueError:continue
+    if stats is not None:
+        stats['vision_raw']=len(raw) if isinstance(raw,list) else 0
+        stats['vision_objects']=len(objects)
+        stats['vision_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
     colors=[c.strip() for c in data.get('colors') if isinstance(c,str) and c.strip() and len(c.strip())<=80] if isinstance(data.get('colors'),list) else []
     try:
         return PhotoAnalysis(objects=objects[:limit],
@@ -258,16 +265,25 @@ def parse_photo_analysis(result,limit=20):
     except ValueError:raise PipelineFailure('invalid_model_output') from None
 
 
-def parse_plan(result,limit=20):
+def _diagnostics(request,stats):
+    """Counts only, and only when the caller opts in."""
+    return dict(stats) if request.query_params.get('diagnostics') else None
+
+
+def parse_plan(result,limit=20,stats=None):
     """Keeps every individually valid placement; only an all-invalid reply fails."""
     data=completion_payload(result)
     raw=data.get('enhancements')
     if not isinstance(raw,list):raise PipelineFailure('invalid_model_output')
+    if stats is not None:
+        stats['plan_raw']=len(raw)
+        stats['plan_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
     kept={}
     for item in raw:
         try:placement=Enhancement.model_validate(canonical_placement(item))
         except ValueError:continue
         kept.setdefault(placement.id,placement)
+    if stats is not None:stats['plan_kept']=len(kept)
     if raw and not kept:raise PipelineFailure('invalid_model_output')
     return Plan(enhancements=list(kept.values())[:limit])
 
@@ -289,12 +305,13 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
     if pipeline.settings.demo_mode or not pipeline.openai:
         return manifest(ctx,[],'demo',True)
     if not image:raise HTTPException(422,'A photograph is required for AI proposals')
+    stats={}
     try:
         async def live():
             vision=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':FURNITURE_VISION_PROMPT},{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:'+image+';base64,'+base64.b64encode(data).decode(),'detail':'low'}}]}],
                 response_format={'type':'json_object'},max_completion_tokens=1800,temperature=0,timeout=20)
-            observations=parse_photo_analysis(vision)
+            observations=parse_photo_analysis(vision,stats=stats)
             prompt=('Select visible furniture and map each item to the closest asset in this exact assetId:type catalog: '+json.dumps(CATALOG)+
                 '. Return JSON matching '+json.dumps(Plan.model_json_schema())+
                 '. Photo relationships are not metric 3D evidence. Propose approximate Y-up render-frame transforms only, '
@@ -313,10 +330,11 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
             plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
                 response_format={'type':'json_object'},max_completion_tokens=4000,temperature=0,timeout=30)
-            return parse_plan(plan)
+            return parse_plan(plan,stats=stats)
         result=await asyncio.wait_for(live(),55)
-        return manifest(ctx,result.enhancements,'ai')
+        return manifest(ctx,result.enhancements,'ai',diagnostics=_diagnostics(request,stats))
     except Exception as error:
         # No raw model output, stories, image bytes or credentials in errors/logs.
         logging.getLogger(__name__).warning('furniture_generation_failed type=%s',type(error).__name__)
-        return manifest(ctx,[],'demo',True)
+        stats['error']=type(error).__name__
+        return manifest(ctx,[],'demo',True,diagnostics=_diagnostics(request,stats))
