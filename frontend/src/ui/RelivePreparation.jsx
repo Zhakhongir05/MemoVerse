@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { preparePodcast, watchPodcastPreparation } from '../integration/preparePodcast.js'
 import { journalWorldRequest, waitForJournalWorld } from '../integration/journalWorldApi.js'
+import WorldProgress from './WorldProgress.jsx'
 
 export default function RelivePreparation({ memory, hasWorldViewer, onGenerated, onExplore, onBack, onEdit, user, Photo, generationRequest }) {
   const [job, setJob] = useState(null)
@@ -59,6 +60,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
     <div className="mj-preparation-card mj-glass"><p className="mj-eyebrow">YOUR SAVED MEMORY WORLD</p>
       <h1>{completed ? 'Enter Memory World' : pending ? 'Creating your memory world…' : 'Relive in 3D'}</h1>
       <p role="status">{completed ? 'Opening your world…' : pending ? 'Your 3D world is being prepared. You can leave and return.' : job?.status === 'none' ? 'Turn your photo into a place you can explore.' : 'Opening your memory…'}</p>
+      <WorldProgress active={!error && (starting || pending)} completed={completed} />
       {error && <p role="alert">{error}</p>}
       {!memory.photos.length && <button onClick={onEdit}>Add a photograph</button>}
       {job?.status === 'none' && !error && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Uses 1 world allowance.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Create 3D world'}</button></>}
