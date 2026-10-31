@@ -2,6 +2,30 @@ import {test,expect} from '@playwright/test';
 import {spz,collider,png} from './fixtures.js';
 import {sessionFor,TEST_USERS} from '../../backend/tests/supabase_fixture.mjs';
 function wav(){const b=Buffer.alloc(32044);b.write('RIFF');b.writeUInt32LE(b.length-8,4);b.write('WAVEfmt ',8);b.writeUInt32LE(16,16);b.writeUInt16LE(1,20);b.writeUInt16LE(1,22);b.writeUInt32LE(8000,24);b.writeUInt32LE(16000,28);b.writeUInt16LE(2,32);b.writeUInt16LE(16,34);b.write('data',36);b.writeUInt32LE(32000,40);return b;}
+test('saved memory creates a podcast before any world and reload reuses the recording',async({page},testInfo)=>{
+ let creates=0,steps=0;const worldWrites=[]
+ page.on('request',request=>{if(request.method()==='POST'&&/\/world(?:$|\?)/.test(request.url()))worldWrites.push(request.url())})
+ const tour=()=>creates?{id:'33333333-3333-4333-8333-333333333333',status:steps===3?'ready':'pending',script:{chapters:[1,2,3].map(order=>({order,title:'Saved podcast '+order,narration:'A quiet afternoon reading beside the window.'}))},audio:steps===3?[1,2,3].map(order=>({order,url:`http://127.0.0.1:${process.env.MEMOVERSE_TEST_FRONTEND_PORT||5206}/test-narration.wav`,duration_seconds:2})):[]}:null
+ await page.route('**/test-narration.wav',r=>r.fulfill({body:wav(),contentType:'audio/wav'}))
+ await page.route('**/api/memorycast/**',r=>{
+  const q=r.request()
+  if(q.method()==='POST'&&q.url().includes('/memories/')){creates++;expect(q.postDataJSON()).toMatchObject({regenerate:false,retry_failed:true});return r.fulfill({status:202,json:{tour:tour()}})}
+  if(q.method()==='POST'){steps++;return r.fulfill({json:{tour:tour(),advanced:true}})}
+  return r.fulfill({json:{generation_enabled:true,tour:tour()}})
+ })
+ await page.addInitScript(s=>localStorage.setItem('sb-127-auth-token',JSON.stringify(s)),sessionFor(TEST_USERS[0]))
+ await page.goto('/');await page.getByRole('button',{name:'Explore Memories',exact:true}).click();await page.getByRole('button',{name:'＋ New Memory',exact:true}).click()
+ await page.locator('#mj-title').fill('Podcast without 3D');await page.locator('#mj-story').fill('I remember reading by the window.');await page.locator('#mj-photos').setInputFiles({name:'test.png',mimeType:'image/png',buffer:png})
+ await page.getByRole('button',{name:'Save journal entry ↗',exact:true}).click()
+ await page.getByRole('button',{name:'Create podcast',exact:true}).click()
+ await expect(page.getByRole('heading',{name:'Saved podcast 1'})).toBeVisible()
+ await expect(page.getByRole('button',{name:'Create podcast',exact:true})).toHaveCount(0)
+ await page.screenshot({path:testInfo.outputPath('podcast-before-world.png'),fullPage:true})
+ expect(creates).toBe(1);expect(steps).toBe(3);expect(worldWrites).toEqual([])
+ await page.reload();await page.getByRole('button',{name:'Explore Memories',exact:true}).click();await page.getByRole('button',{name:'Listen to memory',exact:true}).click()
+ await expect(page.getByRole('heading',{name:'Saved podcast 1'})).toBeVisible()
+ expect(creates).toBe(1);expect(steps).toBe(3);expect(worldWrites).toEqual([])
+})
 test('one completed world prepares one saved podcast; headphones replay without generation',async({page},testInfo)=>{
  const errors=[];page.on('pageerror',e=>errors.push(e.message));let creates=0,steps=0,failedRead=false;
  await page.route('https://cdn.marble.worldlabs.ai/**',r=>r.fulfill({body:r.request().url().includes('.spz')?spz():r.request().url().includes('.glb')?collider():png,headers:{'Access-Control-Allow-Origin':'*'}}));

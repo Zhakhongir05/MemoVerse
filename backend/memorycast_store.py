@@ -23,7 +23,7 @@ class TourStore(SupabaseWorlds):
         if not isinstance(result,dict):raise HTTPException(503,'MemoryCast storage is unavailable.')
         if result.get('error'):raise HTTPException({'not_found':404,'disabled':503,'stale':409,'limit':429}.get(result['error'],409),result.get('message','MemoryCast is unavailable.'))
         return result
-    async def recover_failed(self,user,memory_id,context,input_hash):
+    async def recover_failed(self,user,memory_id,context,input_hash,*,explicit_retry=False):
         """One compare-and-swap recovery inside an existing pre-audio reservation.
 
         No quota reset, new reservation, uncertain retry, or audio overwrite.
@@ -34,7 +34,8 @@ class TourStore(SupabaseWorlds):
         if not rows:return None
         old=rows[0];prior=old.get('context') or {};photos=prior.get('photos',[])
         if (old.get('status')!='failed' or old.get('lease') is not None or old.get('audio_paths') or old.get('audio_durations') or
-            not isinstance(old.get('next_step'),int) or not 0<=old['next_step']<=len(photos) or prior.get('automatic_recoveries',0)>=1):
+            not isinstance(old.get('next_step'),int) or not 0<=old['next_step']<=len(photos) or
+            (prior.get('automatic_recoveries',0)>=1 and not explicit_retry)):
             return old
         fresh=copy.deepcopy(context);fresh['automatic_recoveries']=1
         step=0
