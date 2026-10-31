@@ -24,6 +24,8 @@ class Accounts:
     async def rpc(self, name, params):
         if self.forbidden: raise HTTPException(404,'Not found')
         job={'job_id':JOB,'status':self.status,'world':None}
+        if name=='mv_world_memory': return {'job':None,'world':None}
+        if name=='mv_world_poll': return {'poll':False,'job':job}
         if name=='mv_journal_world': return job
         if name=='mv_journal_reserve':
             fresh=self.status=='none'
@@ -47,6 +49,43 @@ class JournalWorldTests(unittest.TestCase):
     def test_read_never_generates(self):
         with patch('backend.journal_worlds.provider',new_callable=AsyncMock) as provider:
             self.assertEqual(self.read().json()['status'],'none');provider.assert_not_called()
+    def test_older_binding_reopens_when_modern_binding_is_empty_and_budget_is_spent(self):
+        original=self.accounts.rpc
+        saved={'job_id':JOB,'status':'succeeded','world':{'id':'already-paid-world','source':'worldlabs'}}
+        async def rpc(name,params):
+            if name=='mv_world_memory':return {'job':saved}
+            if name=='mv_journal_reserve':raise HTTPException(429,'Budget reached')
+            return await original(name,params)
+        self.accounts.rpc=rpc
+        with patch('backend.journal_worlds.provider',new_callable=AsyncMock) as provider:
+            self.assertEqual(self.read().json()['world']['id'],'already-paid-world')
+            self.assertEqual(self.post().json()['world']['id'],'already-paid-world')
+            provider.assert_not_called();self.assertEqual(self.accounts.reservations,0)
+    def test_pending_modern_job_progresses_without_a_separate_worker(self):
+        self.accounts.status='pending'
+        with patch('backend.journal_worlds.get_job',new_callable=AsyncMock,return_value={'status':'pending','job_id':JOB}) as poll:
+            self.assertEqual(self.read().json()['status'],'pending')
+            poll.assert_awaited_once_with(JOB,USER,self.accounts,journal=True)
+    def test_saved_result_without_a_binding_never_starts_a_replacement(self):
+        original=self.accounts.rpc
+        async def rpc(name,params):
+            if name=='mv_world_memory':return {'job':None,'world':{'id':'older-saved-world','source':'worldlabs'}}
+            return await original(name,params)
+        self.accounts.rpc=rpc
+        self.assertEqual(self.post().json()['status'],'legacy_recovery')
+        self.assertEqual(self.accounts.reservations,0)
+    def test_saved_job_metadata_recovery_verifies_the_owned_job(self):
+        original=self.accounts.rpc
+        async def rpc(name,params):
+            if name=='mv_world_memory':return {'job':None,'world':{'id':'owned-world','source':'worldlabs','jobId':JOB}}
+            return await original(name,params)
+        self.accounts.rpc=rpc
+        with patch('backend.journal_worlds.get_job',new_callable=AsyncMock,return_value={'status':'succeeded','job_id':JOB,'world':{'id':'owned-world'}}) as read:
+            self.assertEqual(self.read().json()['world']['id'],'owned-world')
+            read.assert_awaited_once_with(JOB,USER,self.accounts)
+        with patch('backend.journal_worlds.get_job',new_callable=AsyncMock,side_effect=HTTPException(404,'Not owned')):
+            self.assertEqual(self.read().status_code,404)
+        self.assertEqual(self.accounts.reservations,0)
     def test_first_relive_submits_once_repeated_click_and_refresh_reuse(self):
         with patch('backend.journal_worlds.provider',new_callable=AsyncMock,return_value={'operation_id':'operation-test'}) as provider,patch('backend.journal_worlds.storage',new_callable=AsyncMock,return_value=self.photo):
             self.assertEqual(self.post().json()['status'],'pending')

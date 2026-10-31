@@ -37,26 +37,31 @@ test('one completed world prepares one saved podcast; headphones replay without 
 });
 
 test('one creation action prepares podcast, enters world automatically, headphones play and reload reuses it',async({page})=>{
- let creates=0, advances=0;
+ let creates=0, advances=0, finishSpeech;
+ const speechGate=new Promise(resolve=>{finishSpeech=resolve});
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.route('https://cdn.marble.worldlabs.ai/**',r=>r.fulfill({body:r.request().url().includes('.spz')?spz():r.request().url().includes('.glb')?collider():png,headers:{'Access-Control-Allow-Origin':'*'}}));
  await page.route('https://api.worldlabs.ai/**',()=>{throw Error('No paid generation')});
  await page.route('**/test-narration.wav',r=>r.fulfill({body:wav(),contentType:'audio/wav'}));
  const tour=()=>({id:'22222222-2222-4222-8222-222222222222',status:advances===3?'ready':'pending',script:{version:4,chapters:[1,2,3].map(order=>({order,title:'Saved chapter '+order,narration:'Your journal recalls reading beside the window.',anchor_id:null}))},audio:advances===3?[1,2,3].map(order=>({order,url:`http://127.0.0.1:${process.env.MEMOVERSE_TEST_FRONTEND_PORT||5206}/test-narration.wav`,duration_seconds:60})):[]});
- await page.route('**/api/memorycast/**',r=>{
+ await page.route('**/api/memorycast/**',async r=>{
   const q=r.request();
   if(q.method()==='POST'&&q.url().includes('/memories/')){creates++;expect(q.postDataJSON().regenerate).toBe(false);return r.fulfill({status:202,json:{tour:tour()}})}
-  if(q.method()==='POST'){advances++;return r.fulfill({json:{tour:tour(),advanced:true}})}
+  if(q.method()==='POST'){await speechGate;advances++;return r.fulfill({json:{tour:tour(),advanced:true}})}
   return r.fulfill({json:{generation_enabled:true,stale:false,tour:creates?tour():null}});
  });
  await page.addInitScript(s=>localStorage.setItem('sb-127-auth-token',JSON.stringify(s)),sessionFor(TEST_USERS[0]));
  await page.goto('/');await page.getByRole('button',{name:'Explore Memories',exact:true}).click();await page.getByRole('button',{name:'＋ New Memory',exact:true}).click();
  await page.locator('#mj-title').fill('One step memory');await page.locator('#mj-story').fill('I remember reading at the window.');await page.locator('#mj-photos').setInputFiles({name:'test.png',mimeType:'image/png',buffer:png});
- await page.getByRole('button',{name:'Create world + podcast',exact:true}).click();
+ await page.getByRole('button',{name:'Create 3D world',exact:true}).click();
  await expect(page.getByRole('region',{name:'Immersive memory exploration'})).toBeVisible({timeout:30000});
+ await expect(page.locator('[data-world-state="ready"]')).toBeVisible({timeout:30000});
+ expect(creates).toBe(1);expect(advances).toBe(0);
+ await page.getByRole('button',{name:'Listen',exact:true}).click();
+ await expect(page.getByText('Preparing your podcast… You can explore while it finishes.',{exact:true})).toBeVisible();
+ finishSpeech();
  await expect.poll(()=>advances).toBe(3);expect(creates).toBe(1);
  await expect(page.getByText('Memory journal ·',{exact:false})).toHaveCount(0);
- await page.getByRole('button',{name:'Listen',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toHaveCount(0);
  await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);
  await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.paused)).toBe(true);await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.paused)).toBe(false);

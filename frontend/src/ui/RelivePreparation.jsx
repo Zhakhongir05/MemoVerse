@@ -40,7 +40,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
   async function enter(mode) {
     try {
       await onGenerated({ world: { ...job.world, source: 'worldlabs', memoryId: memory.id, photoIndex }, tour: job.guided_tour })
-      await preparePodcast(memory.id).catch(() => null)
+      void preparePodcast(memory.id).catch(() => null)
       onExplore(mode)
     } catch (error) { entered.current=false; setError(error.message || 'Could not open this saved world.') }
   }
@@ -58,11 +58,11 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
     <button className="mj-back" onClick={onBack}>← Back to memory</button>
     <div className="mj-preparation-card mj-glass"><p className="mj-eyebrow">YOUR SAVED MEMORY WORLD</p>
       <h1>{completed ? 'Enter Memory World' : pending ? 'Creating your memory world…' : 'Relive in 3D'}</h1>
-      <p role="status">{completed ? 'Opening your world…' : pending ? 'Your world and personal podcast are being prepared. You can leave and return.' : job?.status === 'none' ? 'One photo. One world. Your own narrated memory.' : 'Opening your memory…'}</p>
+      <p role="status">{completed ? 'Opening your world…' : pending ? 'Your 3D world is being prepared. You can leave and return.' : job?.status === 'none' ? 'Turn your photo into a place you can explore.' : 'Opening your memory…'}</p>
       {error && <p role="alert">{error}</p>}
       {!memory.photos.length && <button onClick={onEdit}>Add a photograph</button>}
-      {job?.status === 'none' && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Uses 1 world allowance. Your photo and story also become an AI-narrated podcast.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Create world + podcast'}</button></>}
-      {['failed', 'expired', 'unknown'].includes(job?.status) && <p role="alert">This reservation needs billing/recovery review. Checking again does not start or charge another job.</p>}
+      {job?.status === 'none' && !error && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Uses 1 world allowance.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Create 3D world'}</button></>}
+      {['failed', 'expired', 'unknown', 'legacy_recovery'].includes(job?.status) && <p role="alert">This saved world needs recovery. Checking again will not generate or charge for another world.</p>}
       {error && <button className="mj-secondary" disabled={starting} onClick={() => { entered.current=false; setRefresh(n => n + 1) }}>Retry loading</button>}
 
     </div>
