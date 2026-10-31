@@ -6,6 +6,16 @@ export async function memorycastRequest(path, { method = 'GET', body, signal, cl
   if (error || !data?.session?.access_token) throw new Error('Sign in to open your private memory podcast.')
   const base = enhancementEndpoint().replace('/api/generate-enhancements', '')
   const response = await fetchImpl(base+'/api/memorycast'+path, { method, signal, headers: { Authorization: 'Bearer '+data.session.access_token, ...(body ? { 'Content-Type':'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) })
-  if (!response.ok) throw new Error(response.status === 503 ? 'AI podcast creation is not enabled yet. Your journal entry is still saved.' : response.status === 401 ? 'Please sign in again.' : 'Your private podcast could not be loaded. Retry without uploading any audio.')
+  if (!response.ok) {
+    let code
+    try { code = (await response.json())?.detail?.code } catch { /* Do not show raw upstream bodies. */ }
+    const messages = {
+      memorycast_schema_unavailable: 'Podcast database setup is incomplete. Ask the owner to verify the MemoryCast migration.',
+      memorycast_storage_unavailable: 'Podcast storage is temporarily unavailable. Retry loading your saved tour.',
+    }
+    const message = messages[code] || (response.status === 503 ? 'The podcast service is unavailable. Retry loading; your journal entry is still saved.' : response.status === 401 ? 'Please sign in again.' : 'Your private podcast could not be loaded. Retry without uploading any audio.')
+    const error = new Error(message); error.status = response.status; error.code = code
+    throw error
+  }
   return response.json()
 }

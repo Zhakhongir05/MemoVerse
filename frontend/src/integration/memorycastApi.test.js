@@ -12,6 +12,12 @@ test('podcast replay reads only; generation sends text context identity, never a
  assert.equal(calls[1].headers['Content-Type'],'application/json')
 })
 test('disabled narration is an explicit error and does not substitute uploaded/sample audio',async()=>{
- await assert.rejects(memorycastRequest('/memories/'+id,{client,fetchImpl:async()=>({ok:false,status:503})}),/not enabled/)
+ await assert.rejects(memorycastRequest('/memories/'+id,{client,fetchImpl:async()=>({ok:false,status:503})}),/service is unavailable/)
  await assert.rejects(memorycastRequest('/memories/'+id,{client:null}),/Sign in/)
+})
+
+test('missing database RPC is distinguished from disabled narration and raw errors stay private',async()=>{
+ for(const [code,pattern] of [['memorycast_schema_unavailable',/database setup is incomplete/],['memorycast_storage_unavailable',/storage is temporarily unavailable/],['unknown',/service is unavailable/]]) {
+  await assert.rejects(memorycastRequest('/memories/'+id,{client,fetchImpl:async()=>({ok:false,status:503,json:async()=>({detail:{code,message:'PRIVATE PROVIDER ERROR'}})})}),pattern)
+ }
 })

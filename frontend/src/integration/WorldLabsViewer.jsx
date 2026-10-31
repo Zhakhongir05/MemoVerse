@@ -4,6 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Box3, MeshBasicMaterial, DoubleSide, Raycaster, Vector3 } from 'three';
+import { podcastTarget } from './podcastCamera.js';
 import { existingWorld } from './existingWorld.js';
 import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
@@ -53,6 +54,19 @@ function CameraJourney({controls,journey,onDone,ready}) {
   if(reduced||elapsed.current>2.8)onDone();
  });return null;
 }
+function PodcastFocus({controls,cue,anchors,ready}) {
+ const {camera}=useThree();
+ const target=podcastTarget(cue,anchors);
+ useFrame((_,dt)=>{
+  if(!ready||!target||!controls.current)return;
+  // Rotate attention without translating through unverified room geometry.
+  const point=new Vector3(...target);
+  if(point.distanceTo(camera.position)<.05)return;
+  const reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  controls.current.target.lerp(point,reduced?1:1-Math.exp(-dt*2));
+  controls.current.update();
+ });return null;
+}
 function readEnhancements(payload, worldId = existingWorld.id) {
  try { return { enhancements: parseEnhancementsForWorld(payload, worldId), error: '' }; }
  catch (error) { console.warn('[MemoVerse] Enhancement response rejected.', error); return { enhancements: [], error: error.message }; }
@@ -79,7 +93,7 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null }){
  // Only the saved sample room ships a predefined furniture demo. Journal worlds use
  // their saved manifest when one exists, otherwise they propose furniture once from
  // the bound photograph and cache the result on this device.
@@ -227,9 +241,10 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
-   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
+   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={(selected===a.id||podcastCue?.anchor_id===a.id)?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
-   <CameraJourney controls={controls} journey={journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
+   <PodcastFocus controls={controls} cue={podcastCue} anchors={anchors} ready={status.startsWith('Loaded')}/>
+   <CameraJourney controls={controls} journey={podcastCue?0:journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
   </Canvas>
   {embedded&&!status.startsWith('Loaded')&&<p role={status.includes('failed')?'alert':'status'} style={{position:'absolute',bottom:'1rem',left:'1rem',zIndex:3,background:'#17171bcc',padding:'.6rem 1rem',borderRadius:'.5rem'}}>{status}</p>}
   <div className="atmosphere-wash" aria-hidden="true"/>

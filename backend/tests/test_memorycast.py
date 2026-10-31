@@ -139,6 +139,15 @@ class Routes(unittest.TestCase):
         id=self.create().json()['tour']['id']
         for _ in range(4):self.assertEqual(self.step(id).status_code,200)
         return id
+    def test_read_reports_disabled_flag_without_provider_calls(self):
+        os.environ['MEMORYCAST_LIVE_ENABLED']='false'
+        result=self.load().json()
+        self.assertEqual(result['generation_reason'],'memorycast_disabled')
+        self.assertFalse(result['generation_enabled']);self.assertEqual(self.provider.calls,[])
+    def test_read_reports_missing_providers_without_charging(self):
+        self.provider.configured=lambda:False
+        self.assertEqual(self.load().json()['generation_reason'],'memorycast_providers_unconfigured')
+        self.assertEqual(self.provider.calls,[])
     def test_private_photo_analysis_is_saved_before_personalized_script(self):
         self.store.memory['photos']=[{'path':A+'/'+M+'/photo.png','type':'image/png'}]
         id=self.create().json()['tour']['id']
@@ -194,3 +203,13 @@ class StorageAdapter(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ,{'SUPABASE_URL':'https://existing.supabase.test','SUPABASE_SERVICE_ROLE_KEY':'server-test-only'}):
             async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'signedURL':'https://evil.test/audio'}))) as client:
                 with self.assertRaises(HTTPException):await TourStore(client).signed_audio(A+'/'+M+'/tour/1.wav')
+
+class StorageDiagnostics(unittest.IsolatedAsyncioTestCase):
+    async def test_missing_rpc_has_specific_safe_error(self):
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request:httpx.Response(404,json={'message':'raw private diagnostics'}))) as client:
+                with self.assertRaises(HTTPException) as caught:
+                    await TourStore(client).tour_rpc('mc_read',{})
+        self.assertEqual(caught.exception.status_code,503)
+        self.assertEqual(caught.exception.detail['code'],'memorycast_schema_unavailable')
+        self.assertNotIn('raw private',str(caught.exception.detail))
