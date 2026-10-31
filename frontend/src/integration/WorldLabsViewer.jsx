@@ -8,7 +8,7 @@ import { podcastTarget } from './podcastCamera.js';
 import { existingWorld } from './existingWorld.js';
 import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
-import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld, spreadEnhancementsInRoom } from '../enhancements/schema.js';
+import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld, placeEnhancementsFromPhoto, spreadEnhancementsInRoom } from '../enhancements/schema.js';
 import { loadFurniture } from '../enhancements/generation.js';
 import { saveManifest } from '../enhancements/cache.js';
 
@@ -192,7 +192,13 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   if(!colliderMesh||!needsFit.current)return;
   needsFit.current=false;
   const bounds=new Box3().setFromObject(colliderMesh);
-  const fitAll=list=>settleInsideRoom(colliderMesh,spreadEnhancementsInRoom(fitEnhancementsToBounds(list,bounds),bounds));
+  // Photo-relative hints win; the generic spread is only for guesses without one.
+  const fitAll=list=>{
+    const fitted=fitEnhancementsToBounds(list,bounds);
+    const placed=placeEnhancementsFromPhoto(fitted,bounds);
+    const laid=placed===fitted?spreadEnhancementsInRoom(fitted,bounds):placed;
+    return settleInsideRoom(colliderMesh,laid);
+  };
   setEnhancementState(state=>({...state,list:fitAll(state.list),baseline:fitAll(state.baseline)}));
  },[colliderMesh]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}

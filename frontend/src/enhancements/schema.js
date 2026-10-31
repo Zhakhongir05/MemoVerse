@@ -8,6 +8,7 @@ import { ASSET_CATALOG, ENHANCEMENT_TYPES } from './catalog.js'
  *     enhancements: [{ id, type, assetId, position:[x,y,z],
  *                      rotation:[x,y,z] (radians), scale:[x,y,z]|number,
  *                      anchor: 'floor'|'ceiling'|'none',
+ *                      photoPosition: [u,v] (optional),
  *                      confidence, memory }] }
  *
  * `position` is in the generated world's own asset units (the collider/scene
@@ -64,6 +65,14 @@ function readAnchor(value, type, index) {
   return value
 }
 
+// A layout hint, not geometry: unusable values are dropped rather than
+// rejecting the whole payload, so a bad hint cannot remove the furniture.
+function readPhotoPosition(value) {
+  if (!Array.isArray(value) || value.length !== 2) return null
+  if (!value.every((n) => typeof n === 'number' && Number.isFinite(n))) return null
+  return [Math.min(1, Math.max(0, value[0])), Math.min(1, Math.max(0, value[1]))]
+}
+
 export function normalizeEnhancement(raw, index = 0) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail(`enhancements[${index}] must be an object`)
 
@@ -86,6 +95,7 @@ export function normalizeEnhancement(raw, index = 0) {
     rotation: readVector(raw.rotation ?? [0, 0, 0], `enhancements[${index}].rotation`, (n) => Math.abs(n) <= Math.PI * 4),
     scale: normalizeScale(raw.scale ?? 1),
     anchor: readAnchor(raw.anchor, raw.type, index),
+    photoPosition: readPhotoPosition(raw.photoPosition),
     confidence: readText(raw.confidence, `enhancements[${index}].confidence`, 40) || 'requires-calibration',
     memory: readText(raw.memory, `enhancements[${index}].memory`, 1000),
   }
@@ -136,6 +146,35 @@ export function fitEnhancementsToBounds(enhancements, bounds, margin = 0.15) {
       fit(enhancement.position[2], bounds.min.z, bounds.max.z),
     ],
   }))
+}
+
+/**
+ * Maps a normalized place in the photograph onto the room's floor rectangle.
+ * The viewer's default camera looks down -Z, so the top of the photo (v = 0)
+ * is the far wall and the bottom is the near one. Only X/Z are set; the Y value
+ * is still grounded against the collider.
+ */
+export function placeEnhancementsFromPhoto(enhancements, bounds, { margin = 0.15 } = {}) {
+  if (!bounds) return enhancements
+  if (!enhancements.some((enhancement) => Array.isArray(enhancement.photoPosition))) return enhancements
+  const lowX = bounds.min.x + margin
+  const highX = bounds.max.x - margin
+  const lowZ = bounds.min.z + margin
+  const highZ = bounds.max.z - margin
+  if (lowX >= highX || lowZ >= highZ) return enhancements
+  const round = (value) => Math.round(value * 1000) / 1000
+  return enhancements.map((enhancement) => {
+    const point = enhancement.photoPosition
+    if (!Array.isArray(point)) return enhancement
+    return {
+      ...enhancement,
+      position: [
+        round(lowX + point[0] * (highX - lowX)),
+        enhancement.position[1],
+        round(lowZ + point[1] * (highZ - lowZ)),
+      ],
+    }
+  })
 }
 
 /**

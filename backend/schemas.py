@@ -1,6 +1,7 @@
 """Backend contract proposal; renderer team must confirm before shared adoption."""
+import math
 from typing import Annotated, List, Literal, Optional, Tuple
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 AssetType = Literal['desk', 'bed', 'chair', 'window', 'bookshelf', 'lamp', 'photo-frame']
 Mood = Literal['nostalgic', 'joyful', 'melancholic']
@@ -41,6 +42,29 @@ class Scene(ContractModel):
 class VisibleObject(ContractModel):
     description: Text
     location: Text
+    # Normalized place in the photograph: (0,0) top-left, (1,1) bottom-right.
+    # Purely a layout hint; a bad value is dropped instead of failing analysis.
+    photoPosition: Optional[Tuple[float, float]] = None
+
+    @field_validator('photoPosition', mode='before')
+    @classmethod
+    def clamp_photo_position(cls, value):
+        return clamp_normalized_point(value)
+
+
+def clamp_normalized_point(value):
+    """Returns an in-range (u, v) pair, or None for anything unusable."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    if isinstance(value[0], bool) or isinstance(value[1], bool):
+        return None
+    try:
+        u, v = float(value[0]), float(value[1])
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(u) and math.isfinite(v)):
+        return None
+    return (min(1.0, max(0.0, u)), min(1.0, max(0.0, v)))
 
 class PhotoAnalysis(ContractModel):
     objects: List[VisibleObject] = Field(max_length=20)

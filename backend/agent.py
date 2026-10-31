@@ -133,7 +133,7 @@ class ScenePipeline:
         analysis = parse_completion(vision, PhotoAnalysis)
         result = await self.call_provider(self.deepseek, 'planner',
             model=self.settings.deepseek_model,
-            messages=[{'role': 'system', 'content': SCENE_PROMPT}, {'role': 'user', 'content': json.dumps({'photo_analysis': analysis.model_dump(), 'written_memory': story}, ensure_ascii=False)}],
+            messages=[{'role': 'system', 'content': SCENE_PROMPT}, {'role': 'user', 'content': json.dumps({'photo_analysis': analysis.model_dump(exclude_none=True), 'written_memory': story}, ensure_ascii=False)}],
             response_format={'type': 'json_object'}, max_tokens=2500,
         )
         return parse_completion(result, Scene)

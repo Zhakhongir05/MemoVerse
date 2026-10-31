@@ -80,6 +80,18 @@ class EnhancementTests(unittest.TestCase):
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())})
             self.assertEqual(r.json()['enhancements'],[]);self.assertTrue(r.json()['fallback'])
 
+    def test_photo_position_is_optional_and_clamped(self):
+        from backend.schemas import PhotoAnalysis
+        base=dict(description='A stool',location='Right of the island')
+        for value,expected in [([0.2,0.8],(0.2,0.8)),([2,-1],(1.0,0.0)),([1],None),(['a','b'],None),('nope',None)]:
+            obj=PhotoAnalysis.model_validate(dict(objects=[{**base,'photoPosition':value}],spatial_layout='Near the island',lighting='Bright',colors=['white'],uncertainty='Approximate'))
+            self.assertEqual(obj.objects[0].photoPosition,expected)
+        self.assertEqual(Enhancement.model_validate({**item(),'photoPosition':[2,-1]}).photoPosition,(1.0,0.0))
+        self.assertIsNone(Enhancement.model_validate({**item(),'photoPosition':'left'}).photoPosition)
+        c=EnhancementContext.model_validate(context())
+        m=manifest(c,[Enhancement.model_validate({**item(),'photoPosition':[0.25,0.75]})],'ai')
+        self.assertEqual(m.enhancements[0].photoPosition,(0.25,0.75))
+
     def test_ai_memory_never_mentions_people(self):
         for text,expected in [
             ('A stool on which the boy is sitting.',''),
@@ -92,6 +104,20 @@ class EnhancementTests(unittest.TestCase):
         # AI memory is cleaned; a user's own words are never rewritten.
         self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'A stool on which the boy is sitting.'})],'ai').enhancements[0].memory,'')
         self.assertEqual(manifest(c,[Enhancement.model_validate({**item(),'memory':'My grandfather sat here.'})],'user').enhancements[0].memory,'My grandfather sat here.')
+
+    def test_endpoint_round_trips_photo_positions(self):
+        analysis=dict(objects=[dict(description='A wooden stool',location='Right of the island',photoPosition=[0.8,0.6])],spatial_layout='Stool beside an island',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
+        plan={'enhancements':[{**item(),'photoPosition':[0.8,0.6]}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['enhancements'][0]['photoPosition'],[0.8,0.6])
+            self.assertIn('photoPosition',create.await_args_list[0].kwargs['messages'][0]['content'])
+            planned=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])
+            self.assertEqual(planned['photo_analysis']['objects'][0]['photoPosition'],[0.8,0.6])
 
     def test_endpoint_strips_people_from_ai_memory(self):
         analysis=dict(objects=[],spatial_layout='A stool beside an island',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')

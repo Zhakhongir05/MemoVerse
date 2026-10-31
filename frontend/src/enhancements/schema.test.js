@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementResponse, parseEnhancementsForWorld, spreadEnhancementsInRoom } from './schema.js'
+import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementResponse, parseEnhancementsForWorld, placeEnhancementsFromPhoto, spreadEnhancementsInRoom } from './schema.js'
 
 const clone = () => structuredClone(DEMO_ENHANCEMENT_RESPONSE)
 
@@ -103,6 +103,34 @@ test('centers placements when the room is narrower than the margin', () => {
   const [enhancement] = parseEnhancementResponse(clone()).enhancements
   const [fitted] = fitEnhancementsToBounds([{ ...enhancement, position: [9, 1, 9] }], bounds)
   assert.deepEqual(fitted.position, [0.05, 1, 0.05])
+})
+
+test('keeps a valid photo position and drops unusable ones', () => {
+  const payload = clone()
+  payload.enhancements[0].photoPosition = [0.25, 0.75]
+  payload.enhancements[1].photoPosition = ['x', 2]
+  payload.enhancements[2].photoPosition = [2, -1]
+  const parsed = parseEnhancementResponse(payload).enhancements
+
+  assert.deepEqual(parsed[0].photoPosition, [0.25, 0.75])
+  assert.equal(parsed[1].photoPosition, null)
+  assert.deepEqual(parsed[2].photoPosition, [1, 0])
+})
+
+test('maps photo positions onto the room floor rectangle', () => {
+  const bounds = { min: { x: -10, y: -1, z: -20 }, max: { x: 10, y: 2, z: 4 } }
+  const list = [
+    { id: 'left-far', photoPosition: [0, 0], position: [0, 1, 0] },
+    { id: 'right-near', photoPosition: [1, 1], position: [0, 1, 0] },
+    { id: 'plain', photoPosition: null, position: [3, 1, -3] },
+  ]
+
+  const placed = placeEnhancementsFromPhoto(list, bounds)
+
+  assert.deepEqual(placed[0].position, [-10 + 0.15, 1, -20 + 0.15])
+  assert.deepEqual(placed[1].position, [10 - 0.15, 1, 4 - 0.15])
+  assert.deepEqual(placed[2], list[2])
+  assert.deepEqual(placeEnhancementsFromPhoto(list, null), list)
 })
 
 test('spreads a pile of near-origin guesses across the room', () => {
