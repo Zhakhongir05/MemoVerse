@@ -12,6 +12,7 @@ export default function AuthGate({ children }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [authOpen, setAuthOpen] = useState(false)
+  const [guestAccess, setGuestAccess] = useState(false)
   const [startInJournal, setStartInJournal] = useState(() => {
     try { return ['journal', 'studio'].includes(sessionStorage.getItem('memoverse:after-login')) }
     catch { return false }
@@ -63,6 +64,7 @@ export default function AuthGate({ children }) {
     const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' })
     if (signOutError) throw signOutError
     setStartInJournal(false)
+    setGuestAccess(false)
   }
 
   async function continueWithGoogle() {
@@ -85,7 +87,7 @@ export default function AuthGate({ children }) {
         setStartInJournal(true)
         try { sessionStorage.setItem('memoverse:after-login', 'journal') } catch { /* Email/password login can still continue. */ }
         setError(''); setNotice(''); setAuthOpen(true)
-      }, checking, initialScreen: session && startInJournal ? 'journal' : 'landing' })}
+      }, checking, guestAccess, initialScreen: (session && startInJournal) || guestAccess ? 'journal' : 'landing' })}
     </div>
     {authOpen && !session && <main className="mv-auth-shell">
     <button className="mv-auth-back" type="button" disabled={busy} onClick={() => { setAuthOpen(false); setPassword('') }}>← Back to exploring</button>
@@ -107,7 +109,10 @@ export default function AuthGate({ children }) {
         <button className="mv-auth-primary" disabled={!supabase || busy}>{busy ? 'Connecting…' : mode === 'signup' ? 'Create account ↗' : 'Sign in ↗'}</button>
       </form>
       <button className="mv-auth-switch" disabled={busy} onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); setNotice(''); setPassword('') }}>{mode === 'signup' ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>
-      <button className="mv-auth-switch" disabled={busy} onClick={() => { setAuthOpen(false); setPassword('') }}>Continue exploring without signing in</button>
+      <button className="mv-auth-switch" disabled={busy} onClick={() => {
+        setGuestAccess(true); setAuthOpen(false); setPassword(''); setError(''); setNotice(''); setStartInJournal(false)
+        try { sessionStorage.removeItem('memoverse:after-login') } catch { /* Guest exploration works without storage. */ }
+      }}>Continue exploring without signing in</button>
       <p className="mv-auth-small">Your saved photographs and stories belong to your account.</p>
     </section>
   </main>}

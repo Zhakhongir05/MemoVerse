@@ -46,7 +46,7 @@ In Authentication settings:
 
 - Enable the Email provider and email confirmations.
 - Set the minimum password length to at least 8.
-- Set Site URL to the development URL, e.g. `http://localhost:5173`.
+- Set Site URL to `https://memoverse05.vercel.app` for the hosted production project.
 - Add your exact development URL to allowed Redirect URLs. Include another port
   only if Vite actually uses it (e.g. `http://localhost:5174`).
 - Add your production URL when deploying. Configure custom SMTP for production
@@ -125,7 +125,8 @@ configured project to test. They have not been verified against a real project y
    Sign In / Providers → Google. Enable the provider and save. Keep the client
    secret in Supabase; do not add it to a VITE variable or commit it to Git.
 6. In Supabase URL Configuration, allow your app origin as a redirect URL and set
-   Site URL, e.g. `http://localhost:5173`. Add production URLs when deploying.
+   Site URL `https://memoverse05.vercel.app`. Keep localhost in the allowed redirect
+   list for development, rather than making it the production project's Site URL.
 7. Sign out of MemoVerse, select **Continue with Google**, choose your test account,
    and verify you return to the app. Test in a normal browser if the embedded browser
    blocks Google login. This signs in with a Google account; it does not read Gmail.
