@@ -163,7 +163,7 @@ export function placeEnhancementsFromPhoto(enhancements, bounds, { margin = 0.15
   const highZ = bounds.max.z - margin
   if (lowX >= highX || lowZ >= highZ) return enhancements
   const round = (value) => Math.round(value * 1000) / 1000
-  return enhancements.map((enhancement) => {
+  const placed = enhancements.map((enhancement) => {
     const point = enhancement.photoPosition
     if (!Array.isArray(point)) return enhancement
     return {
@@ -175,6 +175,12 @@ export function placeEnhancementsFromPhoto(enhancements, bounds, { margin = 0.15
       ],
     }
   })
+  // Guesses without a hint would otherwise pile up at the origin beside the
+  // mapped items; spread just those and leave every mapped position alone.
+  const unhinted = placed.filter((enhancement) => !Array.isArray(enhancement.photoPosition))
+  if (unhinted.length < 2) return placed
+  const laid = new Map(spreadEnhancementsInRoom(unhinted, bounds).map((enhancement) => [enhancement.id, enhancement]))
+  return placed.map((enhancement) => laid.get(enhancement.id) ?? enhancement)
 }
 
 /**

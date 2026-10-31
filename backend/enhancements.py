@@ -332,10 +332,14 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
                 'Include every furniture item that is clearly visible; do not invent objects that are not in the photograph. '
                 'For each enhancement copy photoPosition [x, y] from the matching object in photo_analysis when it is present; '
                 'omit photoPosition when the analysis has none, and never invent one.')
-            plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
-                messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
-                response_format={'type':'json_object'},max_completion_tokens=4000,temperature=0,timeout=30)
-            return parse_plan(plan,stats=stats)
+            async def propose(tokens):
+                plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
+                    messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
+                    response_format={'type':'json_object'},max_completion_tokens=tokens,temperature=0,timeout=30)
+                return parse_plan(plan,stats=stats)
+
+            try: return await propose(4000)
+            except PipelineFailure: return await propose(6000)
         result=await asyncio.wait_for(live(),55)
         return manifest(ctx,result.enhancements,'ai',diagnostics=_diagnostics(request,stats))
     except Exception as error:

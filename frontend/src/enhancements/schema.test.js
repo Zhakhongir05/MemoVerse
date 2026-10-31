@@ -133,6 +133,23 @@ test('maps photo positions onto the room floor rectangle', () => {
   assert.deepEqual(placeEnhancementsFromPhoto(list, null), list)
 })
 
+test('spreads guesses without a photo position away from the mapped ones', () => {
+  const bounds = { min: { x: -5, y: -1, z: -5 }, max: { x: 5, y: 2, z: 5 } }
+  const list = [
+    { id: 'mapped', photoPosition: [0, 0], position: [0, 1, 0] },
+    { id: 'guess-a', photoPosition: null, position: [0, 1, 0] },
+    { id: 'guess-b', photoPosition: null, position: [0.1, 1, 0.1] },
+  ]
+
+  const placed = placeEnhancementsFromPhoto(list, bounds)
+  const [mapped, guessA, guessB] = placed
+
+  assert.deepEqual(mapped.position, [-5 + 0.15, 1, -5 + 0.15])
+  // The guesses no longer sit on top of each other or on the mapped item.
+  assert.notDeepEqual(guessA.position, guessB.position)
+  assert.notDeepEqual([guessA.position[0], guessA.position[2]], [mapped.position[0], mapped.position[2]])
+})
+
 test('spreads a pile of near-origin guesses across the room', () => {
   const bounds = { min: { x: -5, y: -1, z: -8 }, max: { x: 5, y: 2.5, z: 4 } }
   const pile = [
