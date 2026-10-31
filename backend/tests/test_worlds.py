@@ -64,3 +64,17 @@ class StoreTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(command.call_args.args[0],'EVAL')
                 self.assertIn("redis.call('EXISTS'",command.call_args.args[1])
                 self.assertIn("redis.call('INCR'",command.call_args.args[1])
+
+class WorldPreviewTests(unittest.TestCase):
+    def test_generated_preview_and_panorama_reach_frontend_contract(self):
+        from backend.worlds import world_result
+        result=world();result['assets']['thumbnail_url']='https://cdn.marble.worldlabs.ai/generated.jpg';result['assets']['imagery']={'pano_url':'https://cdn.marble.worldlabs.ai/panorama.jpg'}
+        output=world_result(result)
+        self.assertEqual(output['thumbnailUrl'],result['assets']['thumbnail_url'])
+        self.assertEqual(output['panoramaUrl'],result['assets']['imagery']['pano_url'])
+        self.assertEqual(output['splatUrl'],'https://cdn.marble.worldlabs.ai/new.spz')
+    def test_optional_preview_cannot_escape_asset_host_validation(self):
+        from backend.worlds import world_result
+        from fastapi import HTTPException
+        result=world();result['assets']['thumbnail_url']='file:///private/photo.jpg'
+        with self.assertRaises(HTTPException):world_result(result)

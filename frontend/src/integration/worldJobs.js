@@ -7,7 +7,7 @@ export async function worldRequest(path, { token, signal, body, fetchImpl = fetc
  }
  const job = await response.json();
  if (!/^[a-f0-9]{64}$/.test(job.job_id) || !['pending','succeeded',...terminal].includes(job.status)) throw new Error('Invalid world job response.');
- if (job.status === 'succeeded' && (!job.world?.id || !['splatUrl','fullResUrl','colliderUrl'].every(k => {
+ if (job.status === 'succeeded' && (!job.world?.id || !['splatUrl','fullResUrl','colliderUrl',...['thumbnailUrl','panoramaUrl'].filter(k=>job.world[k]!=null)].every(k => {
   try {const u=new URL(job.world[k]);return u.protocol==='https:' && !u.username && !u.password && (u.hostname==='worldlabs.ai'||u.hostname.endsWith('.worldlabs.ai'));} catch {return false;}
  }))) throw new Error('World result is missing valid assets.');
  return job;

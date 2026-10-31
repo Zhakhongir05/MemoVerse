@@ -23,3 +23,11 @@ test('world API reports safe failures and rejects malicious assets',async()=>{
  await assert.rejects(()=>worldRequest('/api/world-jobs',{token:'x',fetchImpl:async()=>({ok:false,status:503})}),/disabled or not configured/);
  await assert.rejects(()=>worldRequest('/api/world-jobs',{token:'x',fetchImpl:async()=>({ok:true,json:async()=>({job_id:id,status:'succeeded',world:{...world,splatUrl:'https://evil.test/x'}})})}),/valid assets/);
 });
+test('completed generated preview survives backend polling and asset validation',async()=>{
+ const generated={...world,thumbnailUrl:'https://cdn.marble.worldlabs.ai/generated.jpg',panoramaUrl:'https://cdn.marble.worldlabs.ai/pano.jpg'};
+ const job=await worldRequest('/api/world-jobs/'+id,{token:'x',fetchImpl:async()=>({ok:true,json:async()=>({job_id:id,status:'succeeded',world:generated})})});
+ const result=await pollWorld(job,{token:'x'});
+ assert.equal(result.thumbnailUrl,generated.thumbnailUrl);
+ assert.equal(result.panoramaUrl,generated.panoramaUrl);
+ await assert.rejects(()=>worldRequest('/api/world-jobs/'+id,{token:'x',fetchImpl:async()=>({ok:true,json:async()=>({...job,world:{...generated,thumbnailUrl:'https://evil.test/photo.jpg'}})})}),/valid assets/);
+});

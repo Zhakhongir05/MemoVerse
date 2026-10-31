@@ -49,7 +49,7 @@ function CameraJourney({controls,journey,onDone,ready}) {
 }
 export default function WorldLabsViewer({world=existingWorld,mood:externalMood,onMoodChange}){
  const [quality,setQuality]=useState(()=>window.matchMedia('(pointer: fine)').matches?'full':'balanced');
- const [status,setStatus]=useState('Opening your saved memory world…');
+ const [status,setStatus]=useState(world===existingWorld?'Opening saved sample…':'Opening your newly generated world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
  const [anchors,setAnchors]=useState([]),[selected,setSelected]=useState(null);
  const [memory,setMemory]=useState(''),[localMood,setLocalMood]=useState('nostalgic');

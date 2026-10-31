@@ -7,7 +7,7 @@ export default function ConnectedWorld({scene,mood='Nostalgic',worldMode='symbol
  const object=scene?.objects.find(o=>o.id===selected);
  const displayScene=scene?{...scene,mood:mood.toLowerCase()}:null;
  return <div className="mv-connected-world">
-  {worldMode!=='symbolic'?<Suspense fallback={<p role="status">Loading saved World Labs sample…</p>}><WorldLabsViewer key={worldMode==='generated'?generatedWorld?.id:'sample'} world={worldMode==='generated'?generatedWorld:undefined} mood={mood.toLowerCase()} onMoodChange={onMoodChange}/></Suspense>:<>
+  {worldMode!=='symbolic'?<Suspense fallback={<p role="status">{worldMode==='generated'?'Loading your newly generated world…':'Loading saved World Labs sample…'}</p>}><WorldLabsViewer key={worldMode==='generated'?generatedWorld?.id:'sample'} world={worldMode==='generated'?generatedWorld:undefined} mood={mood.toLowerCase()} onMoodChange={onMoodChange}/></Suspense>:<>
    <MemoryWorld scene={displayScene} onSelect={setSelected}/>
    {scene&&<aside className="mv-object-journal" aria-label="Scene memories"><p>Explore your memory objects</p><div>{scene.objects.map(o=><button key={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.type}</button>)}</div>{object&&<section aria-label="Selected object memory"><strong>{object.type}</strong><p>{object.memory||'No story was provided for this object.'}</p></section>}</aside>}
   </>}

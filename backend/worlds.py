@@ -99,7 +99,13 @@ def world_result(world):
     try:
         assets = world['assets']; spz = assets['splats']['spz_urls']
         balanced = spz.get('500k') or spz.get('100k') or spz.get('full_res')
-        return {'id': world['id'], 'splatUrl': asset_url(balanced), 'fullResUrl': asset_url(spz.get('full_res') or balanced), 'colliderUrl': asset_url(assets['mesh']['collider_mesh_url'])}
+        result = {'id': world['id'], 'splatUrl': asset_url(balanced), 'fullResUrl': asset_url(spz.get('full_res') or balanced), 'colliderUrl': asset_url(assets['mesh']['collider_mesh_url'])}
+        # Return generated image assets too, never a backend filesystem path.
+        if assets.get('thumbnail_url'):
+            result['thumbnailUrl'] = asset_url(assets['thumbnail_url'])
+        if (assets.get('imagery') or {}).get('pano_url'):
+            result['panoramaUrl'] = asset_url(assets['imagery']['pano_url'])
+        return result
     except (KeyError, TypeError):
         raise HTTPException(502, 'World Labs result is missing its SPZ or collider.') from None
 
