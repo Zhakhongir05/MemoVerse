@@ -163,3 +163,9 @@ def generation_status(request: Request):
 
 from .enhancements import router as enhancement_router
 app.include_router(enhancement_router)
+
+from .journal_worlds import router as journal_world_router
+app.include_router(journal_world_router)
+
+from .memorycast import router as memorycast_router
+app.include_router(memorycast_router)

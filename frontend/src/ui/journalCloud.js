@@ -44,7 +44,7 @@ export async function uploadJournalEntry(owner, entry, client = supabase) {
   if (error) throw error
   // Do not delete uploaded files on a transport error: the DB request may have
   // committed. Nor remove old revisions another device may still reference.
-  return { ...entry, syncState: 'synced', cloudUpdatedAt: data.updated_at, cloudMedia: { photos, audio } }
+  return { ...entry, world: data.world, syncState: 'synced', cloudUpdatedAt: data.updated_at, cloudMedia: { photos, audio } }
 }
 
 export async function syncDeletedEntry(owner, entry, client = supabase) {

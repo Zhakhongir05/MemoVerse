@@ -1,0 +1,4 @@
+.journal-world-feedback:empty{display:none}
+.journal-world-feedback{position:absolute;top:12px;left:12px;z-index:5;margin:0;padding:8px 12px;background:#182e27ed;color:#f5eedf;border-radius:10px;max-width:70%}
+.journal-world-tour{position:absolute;right:12px;top:60px;z-index:5;max-width:340px;max-height:35%;overflow:auto;padding:16px;background:#182e27ed;color:#f5eedf;border:1px solid #f5c6ad33;border-radius:12px}
+.journal-world-tour audio{max-width:100%}

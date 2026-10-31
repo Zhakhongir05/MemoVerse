@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from backend.main import app
 from backend.world_accounts import SupabaseWorlds,get_accounts
-from backend.worlds import world_result
+from backend.worlds import world_result, ProviderRejected
 
 A='11111111-1111-4111-8111-111111111111';B='22222222-2222-4222-8222-222222222222'
 def photo():
@@ -28,6 +28,8 @@ class FakeAccounts:
     async def rpc(self,name,p):
         self.calls.append((name,copy.deepcopy(p)));owner=p.get('p_user_id')
         jobs=[j for j in self.jobs.values() if j['owner']==owner]
+        if name=='mv_world_binding':return {}
+        if name=='mv_world_binding':return {}
         if name=='mv_world_config':return {'enabled':True,'limit':3,'expires_at':'2026-11-30T00:00:00Z'}
         if name=='mv_world_account':return {'limit':3,'used':len(jobs),'remaining':3-len(jobs),'jobs':[self.public(j) for j in jobs]}
         if name=='mv_world_reserve':
@@ -39,7 +41,10 @@ class FakeAccounts:
         job=self.jobs.get(p.get('p_job_id'))
         if not job or job['owner']!=owner:raise HTTPException(404,'World not found for this account.')
         if name=='mv_world_poll':return {'poll':job['status']=='pending','job':self.public(job),'operation_id':job.get('operation_id')}
-        if name=='mv_world_finish':job.update(p['p_update']);return self.public(job)
+        if name=='mv_world_finish':
+            job.update(p['p_update'])
+            if p['p_update'].get('rejected'):job['allowance_released']=True
+            return self.public(job)
         raise AssertionError(name)
     def public(self,j):return {k:v for k,v in j.items() if k not in ('owner','hash','operation_id')}
 
@@ -54,6 +59,8 @@ class WorldTests(unittest.TestCase):
     def state(self,headers=None):return self.client.get('/api/world-account',headers=headers or self.headers)
     def test_account_starts_with_three_and_no_generation_code(self):
         self.assertEqual(self.state().json()['remaining'],3);self.assertEqual(self.post().status_code,202);self.assertEqual(self.state().json()['remaining'],2)
+        body=self.provider.call_args.args[2]
+        self.assertTrue(all(len(tag)<=32 for tag in body['tags']))
     def test_missing_invalid_auth_and_guest_cannot_generate(self):
         self.assertEqual(self.post(headers={}).status_code,401);self.assertEqual(self.post(headers={'Authorization':'Bearer forged-token'}).status_code,401);self.provider.assert_not_awaited()
     def test_verified_id_ignores_browser_supplied_account_id(self):
@@ -73,6 +80,13 @@ class WorldTests(unittest.TestCase):
     def test_uncertain_submission_is_held_and_never_submitted_again(self):
         self.provider.side_effect=HTTPException(502,'private provider text');first=self.post();self.assertEqual(first.json()['status'],'unknown');self.assertNotIn('private provider text',first.text)
         self.post();self.assertEqual(self.state().json()['remaining'],2);self.assertEqual(self.provider.await_count,1)
+    def test_confirmed_provider_rejection_reports_failed_and_released(self):
+        self.provider.side_effect=ProviderRejected(422,['body.tags.1'])
+        response=self.post()
+        self.assertEqual(response.json()['status'],'failed')
+        self.assertTrue(response.json()['allowance_released'])
+        self.assertEqual(self.provider.await_count,1)
+
     def test_provider_failure_and_expiry_do_not_refund(self):
         first=self.post().json();self.provider.return_value={'done':True,'error':{'message':'private'}}
         result=self.client.get('/api/world-jobs/'+first['job_id'],headers=self.headers);self.assertEqual(result.json()['status'],'failed');self.assertEqual(self.state().json()['remaining'],2)
@@ -120,8 +134,50 @@ class SupabaseAdapterTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(error.exception.status_code,503);self.assertNotIn('private',error.exception.detail)
 
 class WorldPreviewTests(unittest.TestCase):
+    def test_official_world_id_response_is_supported(self):
+        data=world();data['world_id']=data.pop('id');self.assertEqual(world_result(data)['id'],'world-1')
+        data['world_id']=None
+        with self.assertRaises(HTTPException):world_result(data)
     def test_thumbnail_and_panorama(self):
         data=world();data['assets']['imagery']={'pano_url':'https://cdn.marble.worldlabs.ai/pano.jpg'};result=world_result(data);self.assertIn('thumbnailUrl',result);self.assertIn('panoramaUrl',result)
     def test_rejects_untrusted_url(self):
         data=world();data['assets']['thumbnail_url']='file:///private/photo.jpg'
         with self.assertRaises(HTTPException):world_result(data)
+
+class JournalWorldTests(unittest.TestCase):
+    tearDown=WorldTests.tearDown
+    def setUp(self):
+        WorldTests.setUp(self);self.memory_id='33333333-3333-4333-8333-333333333333'
+        self.memory={'memory_id':self.memory_id,'story':'Story stored in Supabase','photos':[{'path':A+'/'+self.memory_id+'/source.png'}],'job':None}
+        self.accounts.photo=AsyncMock(return_value=(photo(),'image/png'))
+        original=self.accounts.rpc
+        async def rpc(name,p):
+            if name=='mv_world_memory':
+                if p['p_user_id']!=A or p['p_memory_id']!=self.memory_id:raise HTTPException(404,'Memory not found')
+                result=copy.deepcopy(self.memory)
+                if self.accounts.jobs:result['job']=self.accounts.public(next(iter(self.accounts.jobs.values())))
+                return result
+            if name=='mv_world_reserve_memory':
+                self.assertEqual(p['p_story'],self.memory['story']);self.assertEqual(p['p_photo_path'],self.memory['photos'][0]['path'])
+                return await original('mv_world_reserve',p)
+            return await original(name,p)
+        self.accounts.rpc=rpc
+    def test_saved_photo_story_are_authoritative_and_retry_never_submits_again(self):
+        url='/api/world-memories/'+self.memory_id
+        result=self.client.post(url,headers=self.headers,data={'approved':'true','story':'Forged browser story'})
+        self.assertEqual(result.status_code,202);self.assertEqual(self.provider.await_count,1)
+        self.assertEqual(self.provider.call_args.args[2]['world_prompt']['text_prompt'],self.memory['story'])
+        self.client.post(url,headers=self.headers,data={'approved':'true'})
+        self.assertEqual(self.provider.await_count,1);self.assertEqual(self.accounts.photo.await_count,1)
+        with patch.dict(os.environ,{'WORLD_GENERATION_ENABLED':'false'}):
+            self.assertEqual(self.client.post(url,headers=self.headers,data={'approved':'true'}).status_code,202)
+        self.assertEqual(self.provider.await_count,1)
+    def test_ownership_photo_selection_consent_and_deleted_memory_fail_before_spend(self):
+        url='/api/world-memories/'+self.memory_id
+        self.assertEqual(self.client.post(url,headers=self.headers,data={'approved':'false'}).status_code,400)
+        self.assertEqual(self.client.post(url,headers=self.headers,data={'approved':'true','photo_index':'10'}).status_code,422)
+        self.assertEqual(self.client.post(url,headers={'Authorization':'Bearer account-b'},data={'approved':'true'}).status_code,404)
+        self.memory['photos'][0]['path']=B+'/foreign.png'
+        self.assertEqual(self.client.post(url,headers=self.headers,data={'approved':'true'}).status_code,422)
+        self.assertEqual(self.client.get('/api/world-memories/not-a-uuid',headers=self.headers).status_code,404)
+        self.provider.assert_not_awaited();self.accounts.photo.assert_not_awaited()

@@ -3,45 +3,61 @@ import {supabase} from '../ui/supabaseClient.js';
 import {worldFetch,pollWorld} from './worldJobs.js';
 import {accountWorldClient} from './accountWorldClient.js';
 
-export default function WorldGeneration({user,file,description,onReady,onExploreSample,autoStart=null}){
+export default function WorldGeneration({user,file,description,onReady,onExploreSample,autoStart=null,memoryId=null,photoIndex=0}){
  const [config,setConfig]=useState(null),[allowance,setAllowance]=useState(null),[busy,setBusy]=useState(false);
  const [consent,setConsent]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
+ const [linkedJob,setLinkedJob]=useState(null);
  const controller=useRef(null),version=useRef(0),autoAttempt=useRef(null);
  const userId=user?.id;
  const account=useMemo(()=>userId&&supabase?accountWorldClient(userId,supabase):null,[userId]);
  useEffect(()=>{
-  const request=new AbortController();let active=true;version.current++;setAllowance(null);setError('');setMessage('');setConsent(false);setBusy(false);
+  const request=new AbortController();let active=true;version.current++;setAllowance(null);setLinkedJob(null);setError('');setMessage('');setConsent(false);setBusy(false);
   (async()=>{
    try{
     const settings=await worldFetch('/api/world-config',{signal:request.signal});if(active)setConfig(settings);
-    if(account){const state=await account.read('/api/world-account',{signal:request.signal});if(active)setAllowance(state);}
-   }catch(e){if(active&&e.name!=='AbortError')setError(e.message);}
+    if(account){
+     if(memoryId){const saved=await account.read(`/api/world-memories/${memoryId}`,{signal:request.signal});if(active)setLinkedJob(saved.job);}
+     const state=await account.read('/api/world-account',{signal:request.signal});if(active)setAllowance(state);
+    }
+   }catch(e){if(active&&e.name!=='AbortError'){setMessage('');setError(e.message);}}
   })();
   return()=>{active=false;request.abort();controller.current?.abort();};
- },[account]);
+ },[account,memoryId]);
  useEffect(()=>{version.current++;controller.current?.abort();setBusy(false);setConsent(false);setError('');},[file,description]);
  async function refreshAllowance(request,current){
   const state=await account.read('/api/world-account',{signal:request.signal});
   if(current===version.current&&!request.signal.aborted)setAllowance(state);
  }
  async function run(existing=null,fromRelive=false){
-  if(busy||!account||(!existing&&(!file||!description.trim()||(!consent&&!fromRelive)||!allowance?.remaining)))return;
-  if(!existing && (file.size>4*1024*1024 || description.trim().length>2000)){setError('For 3D generation choose a photograph up to 4 MB and a story up to 2,000 characters.');return;}
+  if(busy||!account||(!existing&&((!file&&!memoryId)||(!consent&&!fromRelive))))return;
+  if(!existing && !memoryId && (!description.trim()||description.trim().length>2000)){setError('For 3D generation enter a story up to 2,000 characters.');return;}
+  if(!existing && file?.size>4*1024*1024){setError('For 3D generation choose a photograph up to 4 MB.');return;}
   const current=version.current,request=new AbortController();controller.current=request;setBusy(true);setError('');
   try{
    let job;
+   if(memoryId&&!existing){
+    const saved=await account.read(`/api/world-memories/${memoryId}`,{signal:request.signal});
+    if(current!==version.current)return;
+    if(saved.job&&!saved.job.allowance_released)existing=saved.job;
+   }
    if(existing)job=await account.job(`/api/world-jobs/${existing.job_id}`,{signal:request.signal});
    else{
-    const body=new FormData();body.append('photo',file,'memory-photo');body.append('story',description.trim());body.append('approved','true');
-    setMessage('Uploading your photograph securely…');job=await account.job('/api/world-jobs',{body,signal:request.signal});
+    if(!config?.enabled)throw new Error('Realistic generation is currently unavailable. Your photograph is saved; no symbolic scene has been substituted.');
+    if(!allowance?.remaining)throw new Error('You have used your three free worlds. Your existing worlds are still available.');
+    const body=new FormData();body.append('approved','true');
+    if(memoryId)body.append('photo_index',String(photoIndex));
+    else{body.append('photo',file,'memory-photo');body.append('story',description.trim());}
+    setMessage('Loading your saved photograph securely…');job=await account.job(memoryId?`/api/world-memories/${memoryId}`:'/api/world-jobs',{body,signal:request.signal});
    }
    if(current!==version.current)return;
+   if(memoryId)setLinkedJob(job);
    await refreshAllowance(request,current);
    const world=await pollWorld(job,{signal:request.signal,request:account.job,onProgress:next=>{
     if(current===version.current)setMessage(next.message||'Creating your realistic world. This can take several minutes…');
    }});
+   if(memoryId&&world.journalEntryId!==memoryId)throw new Error('This world is not linked to this memory. No other journal entry was changed.');
    if(current===version.current)await onReady(world);
-  }catch(e){if(e.name!=='AbortError'&&current===version.current)setError(e.message);}
+  }catch(e){if(e.name!=='AbortError'&&current===version.current){setMessage('');setError(e.message);}}
   finally{
    if(current===version.current){
     setBusy(false);
@@ -54,10 +70,10 @@ export default function WorldGeneration({user,file,description,onReady,onExplore
  useEffect(()=>{
   if(!autoStart || autoAttempt.current===autoStart || !config || !account || !allowance)return;
   autoAttempt.current=autoStart;
-  if(!config.enabled){setError('Realistic generation is currently unavailable. Your photograph is saved; no symbolic scene has been substituted.');return;}
-  if(!allowance.remaining){setError('You have used your three free worlds. Revisit an existing world without another generation.');return;}
+  if(!config.enabled&&!memoryId){setError('Realistic generation is currently unavailable. Your photograph is saved; no symbolic scene has been substituted.');return;}
+  if(!allowance.remaining&&!memoryId){setError('You have used your three free worlds. Revisit an existing world without another generation.');return;}
   setConsent(true);void run(null,true);
- },[autoStart,config,account,allowance]);
+ },[autoStart,config,account,allowance,memoryId]);
  return <section className="mv-glass mv-world-generation" aria-label="Realistic world experience">
   <h3>Realistic 3D world</h3>
   <p className="mv-fine">Your account includes 3 free world-generation requests during the judging period. Completed worlds can be revisited without using another allowance. Paid upgrades are not available.</p>
@@ -69,8 +85,8 @@ export default function WorldGeneration({user,file,description,onReady,onExplore
     <button type="button" className="mv-primary" disabled={busy||!file||!description.trim()||!consent||!allowance?.remaining} onClick={()=>run()}>{busy?'Creating your world…':'Generate Realistic 3D World'}</button>
     <p className="mv-fine">New requests close {new Date(config.expires_at).toLocaleDateString()}. Submitted jobs reserve an allowance, including jobs that need billing review.</p>
    </>:<p className="mv-fine">New generation is currently unavailable. Your existing worlds remain accessible.</p>}
-   {allowance?.jobs?.length>0&&<div aria-label="Your generated worlds">{allowance.jobs.map((job,index)=><div key={job.job_id}>
-    {['succeeded','pending','submitting'].includes(job.status)?<button type="button" className="mv-save-button" disabled={busy} onClick={()=>run(job)}>{job.status==='succeeded'?`Open world ${index+1}`:`Resume world ${index+1}`}</button>:<p className="mv-fine">World {index+1}: {job.status}. Your reservation is retained for review.</p>}
+   {(memoryId?!!linkedJob:allowance?.jobs?.length>0)&&<div aria-label="Your generated worlds">{(memoryId?[linkedJob]:allowance.jobs).map((job,index)=><div key={job.job_id}>
+    {['succeeded','pending','submitting'].includes(job.status)?<button type="button" className="mv-save-button" disabled={busy} onClick={()=>run(job)}>{job.status==='succeeded'?`Open world ${index+1}`:`Resume world ${index+1}`}</button>:<p className="mv-fine">World {index+1}: {job.status}. {job.allowance_released?'Your allowance has been restored.':'Your reservation is retained for review.'}</p>}
    </div>)}</div>}
   </>}
   {busy&&<><progress aria-label="World generation progress"/><p role="status">{message}</p><button type="button" className="mv-save-button" onClick={()=>{controller.current?.abort();setBusy(false);setMessage('Progress checks paused. Resume your existing job without using another allowance.');}}>Pause progress checks</button></>}

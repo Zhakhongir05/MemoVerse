@@ -15,7 +15,7 @@ function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quali
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
  useEffect(()=>{
   let active=true, mesh=null;
-  onStatus('Loading saved world detail…');
+  onStatus('Loading world detail…');
   const spark=new SparkRenderer({renderer:gl,preBlurAmount:0,blurAmount:.3}); scene.add(spark);
   const splat=new SplatMesh({url:quality==='full'?world.fullResUrl:world.splatUrl,lod:false});
   // Marble raw OpenCV splats -> Three.js. No metric scale is supplied for this draft.
@@ -30,7 +30,7 @@ function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quali
    const bounds=new Box3().setFromObject(mesh);
    onStatus(`Loaded ${splat.numSplats.toLocaleString()} splats and collider. Asset units; metric scale unavailable.`);
    console.info('World Labs assets loaded', {splats:splat.numSplats,colliderBounds:bounds.min.toArray().concat(bounds.max.toArray())});
-  }).catch(()=>{if(active)onStatus('World assets failed to load. Switch to the primitive room to continue.');});
+  }).catch(()=>{if(active)onStatus('World assets failed to load. Reopen this saved memory to retry; no new generation is needed.');});
   return ()=>{active=false;scene.remove(spark,splat);splat.dispose();spark.dispose();if(mesh){scene.remove(mesh);mesh.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});}collider.current=null;onCollider?.(null);};
  },[gl,scene,onStatus,onCollider,quality,world]);
  useEffect(()=>{collider.current?.traverse(o=>{if(o.isMesh)o.material.opacity=wireframe?.5:0;});});
@@ -79,9 +79,10 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience }){
  // Only the saved sample room has a predefined furniture demo; generated worlds start empty.
- const response = enhancementResponse ?? (world.id === existingWorld.id ? DEMO_ENHANCEMENT_RESPONSE : null);
+ const persistentExperience=typeof onSaveExperience==='function';
+ const response = enhancementResponse ?? (!persistentExperience && world.id === existingWorld.id ? DEMO_ENHANCEMENT_RESPONSE : null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState({list:[],baseline:[],error:''});
  const [enhancementStatus,setEnhancementStatus]=useState('');
  const [enhancementSource,setEnhancementSource]=useState('');
@@ -90,7 +91,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
  const [quality,setQuality]=useState('balanced');
  const [status,setStatus]=useState(world.id===existingWorld.id?'Opening saved sample…':'Opening your newly generated world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
- const [anchors,setAnchors]=useState([]),[selected,setSelected]=useState(null);
+ const [anchors,setAnchors]=useState(savedAnchors),[selected,setSelected]=useState(null);
  const [memory,setMemory]=useState(''),[moodSetting,setMoodSetting]=useState('nostalgic');
  // A host (the Dashboard's SenseShift radios) can drive the mood; otherwise use the local buttons.
  const mood=externalMood?externalMood.toLowerCase():moodSetting;
@@ -120,6 +121,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
      setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
      setEnhancementSource('provided');setEnhancementStatus('Supplied placements · not newly AI-generated.');return;
     }
+    if(persistentExperience){setEnhancementStatus('No saved furniture yet. Reopening does not generate AI content.');return;}
     if(!imageUrl){setEnhancementStatus('No photograph supplied; furniture stays empty.');return;}
     const result=await loadFurniture({imageUrl,story,memory:{id:savedMemoryId,owner:savedMemoryOwner},owner:enhancementOwner,worldId:world.id,signal:controller.signal});
     if(!active||controller.signal.aborted)return;
@@ -141,7 +143,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   }
   load();
   return ()=>{active=false;controller.abort();};
- },[response,world.id,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements]);
+ },[response,world.id,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements,persistentExperience]);
  useEffect(()=>{
   if(!cacheInfo||!['ai','saved'].includes(enhancementSource)||needsFit.current)return;
   let active=true;
@@ -212,7 +214,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   for(const kind of ['photo','audio'])if(selectedAnchor?.[kind]){URL.revokeObjectURL(selectedAnchor[kind]);urls.current.delete(selectedAnchor[kind]);}
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
- return <Boundary><div className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
+ return <Boundary><div data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
@@ -221,6 +223,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
    <CameraJourney controls={controls} journey={journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
   </Canvas>
+  {embedded&&!status.startsWith('Loaded')&&<p role={status.includes('failed')?'alert':'status'} style={{position:'absolute',bottom:'1rem',left:'1rem',zIndex:3,background:'#17171bcc',padding:'.6rem 1rem',borderRadius:'.5rem'}}>{status}</p>}
   <div className="atmosphere-wash" aria-hidden="true"/>
   <div className="sense-controls" aria-label="SenseShift atmosphere">
    {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>onMoodChange?onMoodChange(value):setMoodSetting(value)}>{value}</button>)}
@@ -234,7 +237,8 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <p role="status">{enhancementStatus}</p>
    {enhancementError&&<p role="alert" className="enhancement-error">{enhancementError}</p>}
    <button onClick={()=>setRetryEnhancements(value=>value+1)}>Retry furniture</button>
-   <button onClick={showSampleFurniture}>Show sample furniture</button>
+   {world.id===existingWorld.id&&<button onClick={showSampleFurniture}>Show sample furniture</button>}
+   {onSaveExperience&&<button onClick={()=>onSaveExperience({enhancements:{worldId:world.id,scaleStatus:'uncalibrated',unitsPerMeter:null,enhancements:enhancements.map(e=>({...e,anchor:'none'})),source:'user',fallback:false,requiresReview:true},anchors:anchors.map(({id,position,memory})=>({id,position,memory}))})}>Save placements and stories to account</button>}
    {calibrating&&<div className="enhancement-modes" role="group" aria-label="Transform tool">
     {[['translate','Move'],['rotate','Rotate'],['scale','Scale']].map(([mode,label])=><button key={mode} aria-pressed={transformMode===mode} onClick={()=>setTransformMode(mode)}>{label}</button>)}
     <button onClick={resetEnhancements}>Reset</button>
@@ -259,12 +263,11 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
     {selectedAnchor.photo&&<img alt="Attached memory photograph" src={selectedAnchor.photo}/>}
     {selectedAnchor.audio&&<audio controls src={selectedAnchor.audio}/>}
     <label>Attach photograph<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>attach(e,'photo')}/></label>
-    <label>Attach voice recording<input type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/webm,audio/mp4,audio/aac" onChange={e=>attach(e,'audio')}/></label>
     <button onClick={()=>setPlacing('move')}>Move selected memory</button><button onClick={remove}>Remove selected memory</button>
    </section>}
    {audioError&&<p role="alert">{audioError}</p>}
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
-   <p className="local-note">Anchor attachments stay in this tab. Furniture generation uses your photograph; sample furniture is available separately.</p>
+   <p className="local-note">Save placements and anchor stories with the account save button. New photo/audio anchor attachments stay in this tab. Saved worlds reopen without AI generation.</p>
   </details>
  </div></Boundary>;
 }
