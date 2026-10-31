@@ -60,6 +60,7 @@ class WorldTests(unittest.TestCase):
     def test_account_starts_with_three_and_no_generation_code(self):
         self.assertEqual(self.state().json()['remaining'],3);self.assertEqual(self.post().status_code,202);self.assertEqual(self.state().json()['remaining'],2)
         body=self.provider.call_args.args[2]
+        self.assertEqual(body['model'],'marble-1.1')
         self.assertTrue(all(len(tag)<=32 for tag in body['tags']))
     def test_missing_invalid_auth_and_guest_cannot_generate(self):
         self.assertEqual(self.post(headers={}).status_code,401);self.assertEqual(self.post(headers={'Authorization':'Bearer forged-token'}).status_code,401);self.provider.assert_not_awaited()
@@ -166,6 +167,7 @@ class JournalWorldTests(unittest.TestCase):
         url='/api/world-memories/'+self.memory_id
         result=self.client.post(url,headers=self.headers,data={'approved':'true','story':'Forged browser story'})
         self.assertEqual(result.status_code,202);self.assertEqual(self.provider.await_count,1)
+        self.assertEqual(self.provider.call_args.args[2]['model'],'marble-1.1')
         self.assertEqual(self.provider.call_args.args[2]['world_prompt']['text_prompt'],self.memory['story'])
         self.client.post(url,headers=self.headers,data={'approved':'true'})
         self.assertEqual(self.provider.await_count,1);self.assertEqual(self.accounts.photo.await_count,1)
