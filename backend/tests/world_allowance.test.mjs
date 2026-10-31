@@ -96,3 +96,14 @@ test('legacy usage migration retains allowances, disables new spend and is idemp
  assert.equal((await d.rpc('mv_world_account',{p_user_id:A})).used,2);
  assert.equal((await d.db.query('select reserved_credits from world_generation_demo')).rows[0].reserved_credits,3160);
 }));
+
+test('configured draft holds keep the same three-account cap and exact shared budget',()=>withDb(async d=>{
+ await d.db.exec("update world_generation_demo set model='marble-1.0-draft',credits_per_job=500,credit_budget=1500");
+ const results=await Promise.all('abcd'.split('').map(hash=>d.reserve(A,hash)));
+ assert.equal(results.filter(r=>r.fresh).length,3);
+ assert.equal(results.filter(r=>r.error==='allowance_used').length,1);
+ assert.equal((await d.db.query('select reserved_credits from world_generation_demo')).rows[0].reserved_credits,1500);
+ assert.equal((await d.rpc('mv_world_account',{p_user_id:A})).remaining,0);
+ assert.equal((await d.reserve(A,'a')).fresh,false);
+ assert.equal((await d.reserve(B,'e')).error,'budget');
+}));
