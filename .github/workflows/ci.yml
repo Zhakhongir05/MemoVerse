@@ -89,4 +89,4 @@ jobs:
           MEMOVERSE_TEST_PRODUCTION: '1'
           MEMOVERSE_TEST_PYTHON: python
           MEMOVERSE_BROWSER_CHANNEL: chromium
-        run: npm --prefix frontend run test:browser -- world-hotfix.spec.js
+        run: npm --prefix frontend run test:browser -- world-hotfix.spec.js memorycast.spec.js

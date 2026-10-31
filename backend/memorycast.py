@@ -85,7 +85,7 @@ async def perform_step(tour,store,provider):
         context['sources']['photo:'+str(step+1)]=text
         update={'context':context,'message':'Photograph observations saved.'}
     elif step==len(photos):
-        script=await asyncio.wait_for(provider.script(context),20)
+        script=await asyncio.wait_for(provider.script(context),27)
         update={'script':script,'message':'Personalized three-chapter script saved.'}
     else:
         index=step-len(photos)-1

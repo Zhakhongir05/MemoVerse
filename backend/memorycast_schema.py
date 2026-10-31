@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import re
+import unicodedata
 from typing import List,Literal,Optional
 from pydantic import BaseModel,ConfigDict,Field,StringConstraints
 from typing_extensions import Annotated
@@ -21,8 +22,24 @@ class DraftChapter(StrictModel):
     excerpts: List[Excerpt]=Field(min_length=0,max_length=6)
     ambience: Literal['quiet','gentle']='quiet'
 
+class JournalReading(StrictModel):
+    interpretation: Annotated[str,StringConstraints(strip_whitespace=True,min_length=1,max_length=500)]
+    evidence_quote: Annotated[str,StringConstraints(max_length=1000)]
+
 class TourDraft(StrictModel):
+    journal_reading: JournalReading
     chapters: List[DraftChapter]=Field(min_length=3,max_length=3)
+
+class PlanChapter(StrictModel):
+    order: int=Field(ge=1,le=3,strict=True)
+    narration: Annotated[str,StringConstraints(strip_whitespace=True,min_length=40,max_length=2400)]
+    anchor_id: Optional[str]=None
+    source_ids: List[str]=Field(min_length=1,max_length=6)
+    ambience: Literal['quiet','gentle']='quiet'
+
+class TourPlan(StrictModel):
+    journal_reading: JournalReading
+    chapters: List[PlanChapter]=Field(min_length=3,max_length=3)
 
 class TourRequest(StrictModel):
     language: Literal['en','ko']='en'
@@ -66,21 +83,33 @@ def context_for(memory,user_id,language):
     if mood not in MOODS:raise ValueError('Invalid mood')
     world_id=world.get('id') if isinstance(world,dict) else None
     if not isinstance(world_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',world_id):world_id=None
-    return {'version':2,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
+    return {'version':3,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
 
 def fingerprint(context):
     return hashlib.sha256(json.dumps(context,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
 
 TEXT={'en':{'titles':['Arrival','Rediscovery','Reflection']},'ko':{'titles':['도착','재발견','되돌아보기']}}
 
+def copied_excerpt(quote,source):
+    # Ignore typography/capitalization changes, never paraphrases or invented text.
+    def canonical(value):
+        value=unicodedata.normalize('NFKC',value).translate(str.maketrans({'“':'"','”':'"','‘':"'",'’':"'"}))
+        return ' '.join(value.casefold().split())
+    return bool(quote.strip()) and canonical(quote) in canonical(source)
+
 def render_tour(draft,context):
     if [c.order for c in draft.chapters]!=[1,2,3]:raise ValueError('Invalid chapter order')
+    story=context['sources'].get('journal:story','')
+    if story and (not draft.journal_reading.evidence_quote or not copied_excerpt(draft.journal_reading.evidence_quote,story)):raise ValueError('Journal feeling interpretation needs written evidence')
+    if not story and draft.journal_reading.evidence_quote:raise ValueError('Missing written evidence')
     anchors={a['id']:a for a in context['anchors']};sources=context['sources'];language=TEXT[context['language']];chapters=[]
     for i,c in enumerate(draft.chapters):
         if c.anchor_id is not None and c.anchor_id not in anchors:raise ValueError('Unknown memory anchor')
         if not c.excerpts:raise ValueError('Chapter evidence required')
         for e in c.excerpts:
-            if not e.source_id.startswith(('journal:','anchor:','photo:')) or e.source_id not in sources or e.quote not in sources[e.source_id]:raise ValueError('Ungrounded content reference')
+            if not e.source_id.startswith(('journal:','anchor:','photo:')) or e.source_id not in sources or not copied_excerpt(e.quote,sources[e.source_id]):raise ValueError('Ungrounded content reference')
+        if story and not any(e.source_id=='journal:story' for e in c.excerpts):raise ValueError('Every chapter must use the journal')
+        if i<2 and any(k.startswith('photo:') for k in sources) and not any(e.source_id.startswith('photo:') for e in c.excerpts):raise ValueError('Opening chapters must use photograph details')
         text=c.narration
         if any(phrase in text.casefold() for phrase in ('take a breath','take a deep breath','there is no need to hurry','let your attention','stay with this moment')):raise ValueError('Generic meditation narration')
         # Quotes are audited evidence, not a semantic proof of every generated sentence.
@@ -91,4 +120,4 @@ def render_tour(draft,context):
         chapters.append({'order':i+1,'title':language['titles'][i],'narration':text,'subtitles':text,'anchor_id':c.anchor_id,
           'camera':{'position':position,'target':target,'transition_seconds':2.5,'mode':'look-at'},
           'ambience':{'cue':c.ambience,'volume':.08 if c.ambience=='gentle' else 0},'evidence':[e.model_dump() for e in c.excerpts]})
-    return {'version':2,'language':context['language'],'mood':context['mood'],'chapters':chapters,'voice_disclosure':'AI-generated narration'}
+    return {'version':3,'journal_reading':draft.journal_reading.model_dump(),'language':context['language'],'mood':context['mood'],'chapters':chapters,'voice_disclosure':'AI-generated narration'}
