@@ -1,12 +1,8 @@
-import Scene from './3d_world/Scene'
+import MemoryStudio from './integration/MemoryStudio'
 import './App.css'
 
 function App() {
-  return (
-    <div className="App">
-      <Scene />
-    </div>
-  )
+  return <MemoryStudio />
 }
 
 export default App
