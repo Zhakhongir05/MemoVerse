@@ -1,5 +1,10 @@
 const TYPES = ['image/jpeg', 'image/png', 'image/webp']
-export function memoryPhoto(memory) { return memory?.photos?.[0] || null }
+export function memoryPhoto(memory) {
+  const photos = memory?.photos || []
+  const index = memory?.world?.photoIndex
+  if (Number.isInteger(index) && index >= 0 && index < photos.length) return photos[index]
+  return photos[0] || null
+}
 export function photoUrl(photo, create = value => URL.createObjectURL(value)) {
   if (photo instanceof Blob) return { url: create(photo), owned: true }
   const url = typeof photo === 'string' ? photo : photo?.url

@@ -72,7 +72,6 @@ async def authenticated_user(authorization: str=Header(default=''),accounts=Depe
     return await accounts.user(authorization[7:])
 
 async def authenticated_journal_user(authorization: str=Header(default=''),accounts=Depends(get_accounts)):
-    user_id=await authenticated_user(authorization,accounts)
-    if not any(i.get('provider')=='google' for i in getattr(accounts,'profile',{}).get('identities',[])):
-        raise HTTPException(401,'Use your existing Google sign-in for saved memory worlds.')
-    return user_id
+    # Any real (non-anonymous) Supabase account may own a memory world. The
+    # sign-in provider is irrelevant; the account space is created on first use.
+    return await authenticated_user(authorization,accounts)

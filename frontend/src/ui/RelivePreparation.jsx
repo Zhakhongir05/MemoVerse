@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { journalWorldRequest, waitForJournalWorld } from '../integration/journalWorldApi.js'
 
-export default function RelivePreparation({ memory, hasWorldViewer, onGenerated, onExplore, onBack, onEdit, user, generationRequest }) {
+export default function RelivePreparation({ memory, hasWorldViewer, onGenerated, onExplore, onBack, onEdit, user, Photo, generationRequest }) {
   const [job, setJob] = useState(null)
   const [error, setError] = useState('')
   const [refresh, setRefresh] = useState(0)
   const [starting, setStarting] = useState(false)
+  // Remember which photograph built this world so furniture and reopening use the same source.
+  const [photoIndex, setPhotoIndex] = useState(() => {
+    const saved = memory.world?.photoIndex
+    return Number.isInteger(saved) && saved >= 0 && saved < memory.photos.length ? saved : 0
+  })
   const attempted=useRef(null)
   useEffect(() => {
     const controller = new AbortController()
@@ -20,7 +25,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
     if (starting) return
     setStarting(true); setError('')
     try {
-      const next = await journalWorldRequest(memory.id, { method: 'POST', body: { photoIndex: 0, approved: true } })
+      const next = await journalWorldRequest(memory.id, { method: 'POST', body: { photoIndex, approved: true } })
       setJob(next); setRefresh(n => n + 1)
     } catch (error) { setError(error.message) }
     finally { setStarting(false) }
@@ -31,7 +36,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
   },[generationRequest,job?.status,user?.id])
   async function enter(mode) {
     try {
-      await onGenerated({ world: { ...job.world, source: 'worldlabs', memoryId: memory.id }, tour: job.guided_tour })
+      await onGenerated({ world: { ...job.world, source: 'worldlabs', memoryId: memory.id, photoIndex }, tour: job.guided_tour })
       onExplore(mode)
     } catch (error) { setError(error.message || 'Could not open this saved world.') }
   }
@@ -45,7 +50,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
       <p>Saving your journal is free. A new world uses one of three judging-period allowances. Returning to an existing world never generates another.</p>
       {error && <p role="alert">{error}</p>}
       {!memory.photos.length && <button onClick={onEdit}>Add a photograph</button>}
-      {job?.status === 'none' && !!memory.photos.length && user && <><p>Generate from the first saved photograph and send it with your story to World Labs only when you choose below. Editing the journal later will not replace its world.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Relive in 3D · Use 1 allowance'}</button></>}
+      {job?.status === 'none' && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Generate from the selected photograph and send it with your story to World Labs only when you choose below. Editing the journal later will not replace its world.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Relive in 3D · Use 1 allowance'}</button></>}
       {completed && hasWorldViewer && <div className="mj-relive-choices"><button className="mj-primary" onClick={() => enter('free')}>Explore Freely ↗</button><button className="mj-secondary" onClick={() => enter('guided')}>Take a Guided Journey ✧</button></div>}
       {['failed', 'expired', 'unknown'].includes(job?.status) && <p role="alert">This reservation needs billing/recovery review. Checking again does not start or charge another job.</p>}
       <button className="mj-secondary" disabled={starting} onClick={() => setRefresh(n => n + 1)}>Check saved world again</button>
