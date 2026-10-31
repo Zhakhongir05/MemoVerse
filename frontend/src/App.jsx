@@ -6,9 +6,9 @@ import { lazy,Suspense,useState } from 'react'
 import JournalWorld from './integration/JournalWorldViewer.jsx'
 import {savedWorldId} from './ui/savedWorldLocation.js'
 
-function MemoryExperience({ user, signOut, onSignIn, checking, initialScreen, guestAccess }) {
+function MemoryExperience({ user, signOut, onSignIn, checking, initialScreen }) {
   const [journalOpen, setJournalOpen] = useState(initialScreen === 'journal' || !!savedWorldId())
-  if ((user && journalOpen) || guestAccess) return <Suspense fallback={<p role="status">Opening your journal…</p>}><Journal user={user} onSignOut={signOut} onSignIn={onSignIn} checkingAuth={checking} SceneRenderer={ScenePreview} LegacyStudio={Dashboard} WorldViewer={JournalWorld} /></Suspense>
+  if (user && journalOpen) return <Suspense fallback={<p role="status">Opening your journal…</p>}><Journal user={user} onSignOut={signOut} onSignIn={onSignIn} checkingAuth={checking} SceneRenderer={ScenePreview} LegacyStudio={Dashboard} WorldViewer={JournalWorld} /></Suspense>
   return <Dashboard user={user} onSignOut={signOut} onSignIn={onSignIn} checkingAuth={checking} onExplore={() => user ? setJournalOpen(true) : onSignIn()} SceneRenderer={ScenePreview} />
 }
 

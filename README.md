@@ -7,11 +7,13 @@
 MemoVerse turns a journal entry and photograph into a saved, navigable 3D memory
 with a personalized AI podcast.
 
-### Try it without an account
+### Try it
 
-1. **Explore Memories** → **Continue exploring without signing in**.
-2. Journal menu → **Try a Demo**.
-3. Explore the sample room, labelled **Sample**.
+1. **Explore Memories** and sign in (Google, or email and password).
+2. Journal menu → **Try a Demo** for the sample room, labelled **Sample** —
+   no generation is used.
+3. To make your own memory: **＋ New Memory**, add a photograph and the story
+   you remember, then **Generate My Memory**.
 
 ## Stack
 
@@ -59,7 +61,7 @@ Vercel builds from the repository root: the frontend is built by
 
 ## Further reading
 
-- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — the 2½-minute judge demo, timed
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — the judge walkthrough
 - [docs/IMMERSIVE_EXPERIENCE.md](docs/IMMERSIVE_EXPERIENCE.md) — the immersive journal viewer
 - [docs/WORLD_LABS_VIEWER.md](docs/WORLD_LABS_VIEWER.md) — the splat viewer
 - [SCENE_SCHEMA.md](SCENE_SCHEMA.md) — the scene contract
