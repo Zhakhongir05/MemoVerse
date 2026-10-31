@@ -28,7 +28,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
     setStarting(true); setError('')
     try {
       const next = await journalWorldRequest(memory.id, { method: 'POST', body: { photoIndex, approved: true } })
-      void preparePodcast(user.id, memory.id).catch(() => { /* The player offers a read-only retry. World creation stays independent. */ })
+      void preparePodcast(memory.id).catch(() => { /* The player offers a read-only retry. World creation stays independent. */ })
       setJob(next); setRefresh(n => n + 1)
     } catch (error) { setError(error.message) }
     finally { setStarting(false) }
@@ -40,7 +40,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
   async function enter(mode) {
     try {
       await onGenerated({ world: { ...job.world, source: 'worldlabs', memoryId: memory.id, photoIndex }, tour: job.guided_tour })
-      void preparePodcast(user.id, memory.id).catch(() => {})
+      await preparePodcast(memory.id).catch(() => null)
       onExplore(mode)
     } catch (error) { entered.current=false; setError(error.message || 'Could not open this saved world.') }
   }

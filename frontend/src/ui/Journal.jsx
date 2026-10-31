@@ -12,7 +12,7 @@ import RelivePreparation from './RelivePreparation'
 import PhotoPlanInfo from './PhotoPlanInfo'
 import GenerationPlans from './GenerationPlans.jsx'
 import { cachedFavorites, setFavorite, syncFavorites } from './favorites.js'
-import { watchPodcastPreparation } from '../integration/preparePodcast.js'
+import { preparePodcast, watchPodcastPreparation } from '../integration/preparePodcast.js'
 import {existingWorld} from '../integration/existingWorld.js'
 
 function useMediaUrl(file) {
@@ -71,6 +71,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const photoInput = useRef(null)
   const alive = useRef(false)
   const saveLock = useRef(false)
+  const warmedPodcasts = useRef(new Set())
   const resumeWorld = useRef(savedWorldId())
 
   useEffect(() => {
@@ -87,6 +88,16 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     catch (error) { setNotice(error.message) }
     finally { setFavoriteBusy(false) }
   }
+  useEffect(()=>{
+    if(!hasAccount || syncing || loading)return
+    for(const entry of entries){
+      const key=owner+':'+entry.id
+      if(entry.syncState!=='synced'||!entry.photos.length||warmedPodcasts.current.has(key))continue
+      warmedPodcasts.current.add(key)
+      // Backfill existing reservations/worlds, never narrate every saved draft.
+      void preparePodcast(entry.id,undefined,{existingOnly:!entry.world}).catch(()=>{})
+    }
+  },[entries,owner,hasAccount,syncing,loading])
   useEffect(()=>{
     if(!resumeWorld.current||!hasAccount||loading||syncing||loadedOwner.current!==owner)return
     const entry=entries.find(item=>item.id===resumeWorld.current)

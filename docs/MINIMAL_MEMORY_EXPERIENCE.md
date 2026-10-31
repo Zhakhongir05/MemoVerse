@@ -38,7 +38,8 @@ includes its AI podcast. No live paid generation is needed to verify this branch
 Preparation is client-driven with durable server steps: navigating between screens
 continues an in-flight step; revisiting resumes pending work. Closing the entire
 app can pause unfinished work until the next visit. This does not add a cron job
-or claim guaranteed off-browser execution. Failed or uncertain provider steps do
+or claim guaranteed off-browser execution. Only server-approved pre-audio failures may resume their existing reservation
+within the current narration quota. Uncertain steps or already-stored audio do
 not automatically retry. Ready recordings use GET-only replay, including after
 reload or from another device.
 

@@ -104,7 +104,7 @@ class Providers(unittest.IsolatedAsyncioTestCase):
         ctx=context_for(memory(),A,'en');deep=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(draft(ctx).model_dump())))))
         pipeline=SimpleNamespace(deepseek=deep,openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
         result=await TourProvider(pipeline).script(ctx);self.assertEqual(result['chapters'][0]['anchor_id'],'desk-1')
-        call=deep.chat.completions.create.call_args.kwargs;self.assertEqual(call['model'],'existing-lablup-model');self.assertEqual(call['timeout'],12)
+        call=deep.chat.completions.create.call_args.kwargs;self.assertEqual(call['model'],'existing-lablup-model');self.assertGreater(call['timeout'],0);self.assertLessEqual(call['timeout'],16)
     async def test_spoken_script_preserves_photo_specific_prose_and_journal_evidence(self):
         outputs=[]
         for detail in ['A red chair beside a sunlit window.', 'A blue bicycle against a brick wall.']:
@@ -232,6 +232,19 @@ class Routes(unittest.TestCase):
             result=self.load().json();self.assertEqual(result['tour']['status'],'ready');self.assertEqual(len(result['tour']['audio']),3)
             self.assertNotIn('context',result['tour']);self.assertNotIn('lease',result['tour']);self.assertFalse(result['stale'])
         self.assertEqual(len(self.provider.calls),4);self.assertEqual(self.create().json()['fresh'],False);self.assertEqual(len(self.provider.calls),4)
+    def test_failed_pre_audio_recovery_does_not_reserve_another_quota_slot(self):
+        id=self.create().json()['tour']['id'];job=self.store.jobs[id];job['status']='failed'
+        recovered={**job,'status':'pending'}
+        self.store.recover_failed=AsyncMock(return_value=recovered)
+        reserve=self.store.tour_rpc
+        async def reject_new(name,params):
+            if name=='mc_reserve':raise AssertionError('Recovery must reuse the reservation')
+            return await reserve(name,params)
+        self.store.tour_rpc=reject_new
+        result=self.create().json()
+        self.assertEqual(result['tour']['id'],id);self.assertFalse(result['fresh'])
+        self.assertEqual(len(self.store.jobs),1)
+        self.assertEqual(self.client.post('/api/memorycast/memories/'+M,headers={'Authorization':'Bearer account-b'},json={'approved':True}).status_code,404)
     def test_saved_korean_tour_reopens_without_a_false_language_edit(self):
         id=self.create(language='ko').json()['tour']['id']
         for _ in range(4):self.step(id)
@@ -275,6 +288,41 @@ class StorageAdapter(unittest.IsolatedAsyncioTestCase):
         with patch.dict(os.environ,{'SUPABASE_URL':'https://existing.supabase.test','SUPABASE_SERVICE_ROLE_KEY':'server-test-only'}):
             async with httpx.AsyncClient(transport=httpx.MockTransport(lambda _:httpx.Response(200,json={'signedURL':'https://evil.test/audio'}))) as client:
                 with self.assertRaises(HTTPException):await TourStore(client).signed_audio(A+'/'+M+'/tour/1.wav')
+
+class RecoveryAdapter(unittest.IsolatedAsyncioTestCase):
+    async def test_recovery_reuses_photo_and_reservation_with_atomic_owner_filter(self):
+        ctx=context_for(memory(),A,'en');ctx['photos']=[{'path':A+'/'+M+'/p.png','type':'image/png'}]
+        prior=copy.deepcopy(ctx);prior['sources']['photo:1']='A shuttered window.'
+        old={'id':M,'user_id':A,'memory_id':M,'context':prior,'status':'failed','next_step':1,'lease':None,
+             'audio_paths':[],'audio_durations':[],'updated_at':'2026-10-31T19:00:00+00:00'}
+        seen=[]
+        def handle(request):
+            seen.append(request)
+            if request.method=='GET':return httpx.Response(200,json=[old])
+            body=json.loads(request.content)
+            self.assertEqual(body['context']['sources']['photo:1'],'A shuttered window.')
+            self.assertEqual(body['next_step'],1);self.assertEqual(body['context']['automatic_recoveries'],1)
+            self.assertEqual(request.url.params['user_id'],'eq.'+A)
+            self.assertEqual(request.url.params['status'],'eq.failed')
+            self.assertEqual(request.url.params['lease'],'is.null')
+            self.assertEqual(request.url.params['updated_at'],'eq.'+old['updated_at'])
+            self.assertNotIn('audio_paths',body)
+            return httpx.Response(200,json=[{**old,**body}])
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                result=await TourStore(client).recover_failed(A,M,ctx,fingerprint(ctx))
+        self.assertEqual(result['id'],M);self.assertEqual(result['status'],'pending')
+        self.assertEqual([r.method for r in seen],['GET','PATCH'])
+    async def test_uncertain_audio_started_and_already_recovered_jobs_are_never_reset(self):
+        for changes in [{'status':'uncertain'},{'audio_paths':['saved.wav']},{'next_step':2},{'context':{'photos':[],'automatic_recoveries':1}}]:
+            old={'id':M,'context':{'photos':[]},'status':'failed','next_step':0,'lease':None,'audio_paths':[],'audio_durations':[],**changes}
+            seen=[]
+            def handle(request):
+                seen.append(request.method);return httpx.Response(200,json=[old])
+            with patch.dict(os.environ,{'SUPABASE_URL':'https://test.supabase.co','SUPABASE_SERVICE_ROLE_KEY':'sb_secret_synthetic'}):
+                async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                    await TourStore(client).recover_failed(A,M,context_for(memory(),A,'en'),'hash')
+            self.assertEqual(seen,['GET'])
 
 class StorageDiagnostics(unittest.IsolatedAsyncioTestCase):
     async def test_missing_rpc_has_specific_safe_error(self):

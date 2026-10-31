@@ -1,45 +1,52 @@
 import { memorycastRequest } from './memorycastApi.js'
 
-// A single durable tour per memory. Never regenerate on replay or journal edits.
-// DB reservations/leases also coalesce requests across tabs and devices.
-const active = new Map()
-export function preparePodcast(owner, memoryId, request = memorycastRequest) {
-  const key = `${owner}:${memoryId}`
-  if (active.has(key)) return active.get(key)
-  const operation = (async () => {
+const running = new Map()
+const listeners = new Map()
+export function watchPodcast(id, callback) {
+  if(!listeners.has(id))listeners.set(id,new Set())
+  listeners.get(id).add(callback)
+  return ()=>{listeners.get(id)?.delete(callback);if(!listeners.get(id)?.size)listeners.delete(id)}
+}
+function publish(id,result,error){for(const callback of listeners.get(id)||[])callback(result,error)}
+export const pendingPodcast = memoryId => running.get(memoryId)
+// Share one creation sequence across world preparation and the player. The server
+// reservation and leases also deduplicate reloads and requests from other devices.
+export function preparePodcast(memoryId, request = memorycastRequest, { existingOnly = false } = {}) {
+  if (running.has(memoryId)) return running.get(memoryId)
+  const task = (async () => {
     let result = await request('/memories/' + memoryId)
-    if (!result.generation_enabled || ['ready', 'failed', 'uncertain'].includes(result.tour?.status)) return result
     let tour = result.tour
-    if (!tour) ({ tour } = await request('/memories/' + memoryId, { method: 'POST', body: { approved: true, language: 'en', regenerate: false } }))
+    if (tour?.status === 'ready') return result
+    if (tour?.status === 'uncertain') return result
+    if (!tour && existingOnly) return result
+    if (!result.generation_enabled) return result
+    if (!tour || tour.status==='failed') ({ tour } = await request('/memories/' + memoryId, {
+      method: 'POST', body: { approved: true, language: 'en', regenerate: false },
+    }))
     for (let step = 0; step < 11 && tour.status === 'pending'; step++) {
       const next = await request('/tours/' + tour.id + '/advance', { method: 'POST' })
       tour = next.tour
       if (!next.advanced) break
     }
     return request('/memories/' + memoryId)
-  })()
-  active.set(key, operation)
-  operation.finally(() => { if (active.get(key) === operation) active.delete(key) }).catch(() => {})
-  return operation
+  })().then(result=>{publish(memoryId,result,null);return result},error=>{publish(memoryId,null,error);throw error}).finally(() => running.delete(memoryId))
+  running.set(memoryId, task)
+  return task
 }
 
-export function watchPodcastPreparation(owner, memoryId, { onResult = () => {}, onError = () => {}, delay = 15000, request = memorycastRequest } = {}) {
+// Resume only existing durable work; never abort an in-flight leased step.
+export function watchPodcastPreparation(_owner, memoryId) {
   let stopped = false, timer, failures = 0
   async function run() {
     try {
-      const result = await preparePodcast(owner, memoryId, request)
-      if (stopped) return
+      const result = await preparePodcast(memoryId)
+      if (stopped || result.tour?.status !== 'pending') return
       failures = 0
-      onResult(result)
-      if (result.tour?.status !== 'pending') return
     } catch (error) {
-      if (stopped) return
-      onError(error)
-      if (++failures >= 3 || (error.status >= 400 && error.status < 500)) return
+      if (stopped || ++failures >= 3 || (error.status >= 400 && error.status < 500)) return
     }
-    timer = setTimeout(run, delay)
+    timer = setTimeout(run, 15000)
   }
   void run()
-  // Do not abort an already-leased provider step; it must finish persisting.
   return () => { stopped = true; clearTimeout(timer) }
 }

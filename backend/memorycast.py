@@ -4,6 +4,8 @@ import copy
 import os
 import math
 import logging
+import httpx
+from openai import APITimeoutError
 from uuid import UUID,uuid4
 from fastapi import APIRouter,Depends,HTTPException,Request
 from .world_accounts import authenticated_user
@@ -50,6 +52,11 @@ async def create_tour(memory_id:UUID,body:TourRequest,user=Depends(authenticated
     memory=await store.journal(user,str(memory_id))
     try:context=context_for(memory,user,body.language)
     except ValueError:raise HTTPException(422,'Saved memory metadata needs attention.') from None
+    previous=await store.tour_rpc('mc_read',{'p_user':user,'p_memory':str(memory_id),'p_tour':None})
+    if not previous.get('enabled'):raise HTTPException(503,'Podcast preparation is temporarily unavailable.')
+    if previous.get('tour',{} ) and previous['tour']['status']=='failed':
+        recovered=await store.recover_failed(user,str(memory_id),context,fingerprint(context))
+        if recovered:return {'tour':public_tour(recovered),'fresh':False}
     result=await store.tour_rpc('mc_reserve',{'p_user':user,'p_memory':str(memory_id),'p_id':str(uuid4()),'p_hash':fingerprint(context),'p_context':context,'p_regenerate':body.regenerate})
     return {'tour':public_tour(result['tour']),'fresh':result['fresh']}
 
@@ -62,8 +69,8 @@ async def advance_tour(tour_id:UUID,user=Depends(authenticated_user),store=Depen
     if not claim['claimed']:return {'tour':public_tour(claim['tour']),'advanced':False}
     tour=claim['tour'];update={}
     try:
-        update=await asyncio.wait_for(perform_step(tour,store,provider),30)
-    except asyncio.TimeoutError:
+        update=await asyncio.wait_for(perform_step(tour,store,provider),40)
+    except (asyncio.TimeoutError,httpx.TimeoutException,APITimeoutError):
         update={'status':'uncertain','message':'A provider timed out. This step will not be charged again automatically; owner review is required.'}
     except Exception as error:
         step=tour.get('next_step',0);photos=len(tour.get('context',{}).get('photos',[]))
@@ -85,7 +92,7 @@ async def perform_step(tour,store,provider):
         context['sources']['photo:'+str(step+1)]=text
         update={'context':context,'message':'Photograph observations saved.'}
     elif step==len(photos):
-        script=await asyncio.wait_for(provider.script(context),27)
+        script=await asyncio.wait_for(provider.script(context),36)
         update={'script':script,'message':'Personalized three-chapter script saved.'}
     else:
         index=step-len(photos)-1
