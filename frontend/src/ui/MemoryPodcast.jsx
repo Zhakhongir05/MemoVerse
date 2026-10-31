@@ -38,7 +38,7 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange }) {
     {!error && result && !result.generation_enabled && !ready && <p role="status">{result.generation_reason==='memorycast_database_disabled' ? 'Podcast creation is disabled in the database. The owner must enable MemoryCast.' : result.generation_reason==='memorycast_providers_unconfigured' ? 'Podcast providers are not configured on the server.' : 'Podcast creation is disabled on the server. The owner must configure MEMORYCAST_LIVE_ENABLED.'}</p>}
     {tour?.message&&<p role="status">{tour.message}</p>}
     {outdated&&<div role="status">
-      <p>{legacy?'This is an older generic recording, not a new podcast based on your photograph and entry.':'Your entry or narration style has changed. You can create an updated personal podcast.'}</p>
+      <p>{legacy?'This recording uses an older narration style. Generate a journal-led podcast from your entry and photograph.':'Your entry or narration style has changed. You can create an updated personal podcast.'}</p>
       <button type="button" disabled={busy || !result.generation_enabled} onClick={()=>create(true)}>{busy?'Creating personalized narration…':'Generate updated personalized podcast'}</button>
       <p>Uses your saved photograph and journal entry. This generates new AI narration and uses your narration allowance.</p>
       {legacy&&<button type="button" onClick={()=>setShowPrevious(value=>!value)}>{showPrevious?'Hide previous recording':'Listen to previous recording instead'}</button>}

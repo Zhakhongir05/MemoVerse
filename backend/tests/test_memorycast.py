@@ -36,6 +36,14 @@ class Contracts(unittest.TestCase):
         m=memory();base=fingerprint(context_for(m,A,'en'));m['updated_at']='tomorrow';self.assertEqual(base,fingerprint(context_for(m,A,'en')))
         m['story']='A different saved story.';self.assertNotEqual(base,fingerprint(context_for(m,A,'en')))
         self.assertNotEqual(base,fingerprint(context_for(memory(),A,'ko')))
+    def test_saved_scene_is_artistic_context_not_personal_evidence(self):
+        m=memory();m['scene'].update({'title':'Symbolic reading room','environment':'bedroom','mood':'nostalgic'})
+        ctx=context_for(m,A,'en')
+        self.assertTrue(ctx['visualization']['interpretation_only'])
+        self.assertEqual(ctx['visualization']['object_types'],['desk'])
+        self.assertFalse(any(k.startswith('visualization:') for k in ctx['sources']))
+        prior=fingerprint(ctx);m['scene']['environment']='garden'
+        self.assertNotEqual(prior,fingerprint(context_for(m,A,'en')))
     def test_only_valid_existing_anchors_are_spatial_targets(self):
         m=memory();m['scene']['objects'] += [{'id':'bad','position':[True,0,0]},{'id':'far','position':[100,0,0]},{'id':'nan','position':[float('nan'),0,0]}]
         ctx=context_for(m,A,'en');self.assertEqual([a['id'] for a in ctx['anchors']],['desk-1'])
@@ -88,6 +96,8 @@ class Providers(unittest.IsolatedAsyncioTestCase):
         pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
         result=await TourProvider(pipeline).script(ctx)
         self.assertEqual(create.await_count,2)
+        self.assertEqual(json.loads(create.call_args_list[0].kwargs['messages'][1]['content'])['visualization'],ctx['visualization'])
+        self.assertEqual(json.loads(create.call_args_list[1].kwargs['messages'][1]['content'])['visualization'],ctx['visualization'])
         self.assertNotIn('grandfather',result['chapters'][0]['narration'])
         self.assertEqual(result['chapters'][0]['evidence'][0]['quote'],ctx['sources']['journal:story'])
     async def test_lablup_uses_existing_model_and_grounded_contract(self):

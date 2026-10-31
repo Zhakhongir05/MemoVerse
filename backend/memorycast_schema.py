@@ -83,7 +83,13 @@ def context_for(memory,user_id,language):
     if mood not in MOODS:raise ValueError('Invalid mood')
     world_id=world.get('id') if isinstance(world,dict) else None
     if not isinstance(world_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}',world_id):world_id=None
-    return {'version':3,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
+    visualization=None
+    if isinstance(scene,dict) and scene:
+        scene_objects=scene.get('objects') or []
+        if not isinstance(scene_objects,list):scene_objects=[]
+        # AI scene planning is supporting artistic context, never memory evidence.
+        visualization={'interpretation_only':True,'title':str(scene.get('title',''))[:160],'environment':str(scene.get('environment',''))[:80],'mood':str(scene.get('mood',''))[:80],'object_types':[str(o.get('type',''))[:80] for o in scene_objects[:30] if isinstance(o,dict)]}
+    return {'version':4,'visualization':visualization,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
 
 def fingerprint(context):
     return hashlib.sha256(json.dumps(context,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
@@ -120,4 +126,4 @@ def render_tour(draft,context):
         chapters.append({'order':i+1,'title':language['titles'][i],'narration':text,'subtitles':text,'anchor_id':c.anchor_id,
           'camera':{'position':position,'target':target,'transition_seconds':2.5,'mode':'look-at'},
           'ambience':{'cue':c.ambience,'volume':.08 if c.ambience=='gentle' else 0},'evidence':[e.model_dump() for e in c.excerpts]})
-    return {'version':3,'journal_reading':draft.journal_reading.model_dump(),'language':context['language'],'mood':context['mood'],'chapters':chapters,'voice_disclosure':'AI-generated narration'}
+    return {'version':4,'journal_reading':draft.journal_reading.model_dump(),'language':context['language'],'mood':context['mood'],'chapters':chapters,'voice_disclosure':'AI-generated narration'}
