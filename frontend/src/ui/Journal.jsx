@@ -10,6 +10,7 @@ import GenerationPlans from './GenerationPlans'
 import PhotoPlanInfo from './PhotoPlanInfo'
 import WorldAllowance from '../integration/WorldAllowance.jsx'
 import {existingWorld} from '../integration/existingWorld.js'
+import {isMemoryWorld} from '../integration/savedWorld.js'
 
 function useMediaUrl(file) {
   const [value, setValue] = useState({ file: null, url: '' })
@@ -245,7 +246,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
     {view === 'creations' && <section className="mj-collection">
       <div className="mj-page-heading"><div><p className="mj-eyebrow">YOUR MEMORIES, MADE INTO WORLDS</p><h1 ref={heading} tabIndex={-1}>3D <em>Creation.</em></h1><p>A place for the worlds you’ve created. Return whenever you like.</p></div><button className="mj-primary" onClick={() => navigate('journal')}>Choose a memory ↗</button></div>
-      {loading ? <p className="mj-loading" role="status">Opening your creations…</p> : entries.some(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && entry.world.source !== 'mock') ? <div className="mj-card-grid">{entries.filter(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && entry.world.source !== 'mock').map(entry => <MemoryCard key={entry.id} entry={entry} onOpen={memory => { if (!canLeave()) return; setSelected(memory); setActivePhoto(0); setDemo(false); setDirty(false); setView('prepare') }} />)}</div> : <div className="mj-empty"><div className="mj-empty-portal" aria-hidden="true">✧</div><h2>Your first world is waiting.</h2><p>Open a journal entry and select Relive My Memory.<br />Generated worlds will be saved here automatically.</p><button className="mj-primary" onClick={() => navigate('journal')}>Go to My Journal ↗</button></div>}
+      {loading ? <p className="mj-loading" role="status">Opening your creations…</p> : entries.some(entry => isMemoryWorld(entry.world)) ? <div className="mj-card-grid">{entries.filter(entry => isMemoryWorld(entry.world)).map(entry => <MemoryCard key={entry.id} entry={entry} onOpen={memory => { if (!canLeave()) return; setSelected(memory); setActivePhoto(0); setDemo(false); setDirty(false); setView('prepare') }} />)}</div> : <div className="mj-empty"><div className="mj-empty-portal" aria-hidden="true">✧</div><h2>Your first world is waiting.</h2><p>Open a journal entry and select Relive My Memory.<br />Generated worlds will be saved here automatically.</p><button className="mj-primary" onClick={() => navigate('journal')}>Go to My Journal ↗</button></div>}
     </section>}
 
     {view === 'journal' && <section className="mj-collection">
@@ -268,9 +269,9 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
     {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
         <div className="mj-detail-media">{selected.photos.length ? <><Photo file={selected.photos[activePhoto]} alt={`${selected.title}, photograph ${activePhoto + 1}`} className="mj-detail-cover" /><div className="mj-thumbnails">{selected.photos.map((photo, index) => <button key={index} aria-label={`View photograph ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)}><Photo file={photo} alt="" /></button>)}</div></> : <div className="mj-detail-no-photo" aria-hidden="true">◈<span>A moment held in words</span></div>}
-          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
+          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{isMemoryWorld(selected.world) ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
             setDemo(false)
-            if(selected.world && WorldViewer){relive('free');return}
+            if(isMemoryWorld(selected.world) && WorldViewer){relive('free');return}
             if(!user){onSignIn?.();return}
             setGenerationRequest(crypto.randomUUID());setView('prepare')
           }}>Relive My Memory ✧</button></div>

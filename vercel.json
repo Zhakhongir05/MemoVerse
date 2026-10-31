@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "env -u npm_config_cache_dir -u NPM_CONFIG_CACHE_DIR npm ci --prefix frontend",
-  "buildCommand": "python3 scripts/inspect_world_jobs.py && env -u npm_config_cache_dir -u NPM_CONFIG_CACHE_DIR npm run build --prefix frontend",
+  "buildCommand": "env -u npm_config_cache_dir -u NPM_CONFIG_CACHE_DIR npm run build --prefix frontend",
   "outputDirectory": "frontend/dist",
   "functions": {
     "api/index.py": {

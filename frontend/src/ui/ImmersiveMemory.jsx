@@ -57,8 +57,8 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   }
   const renderProps = {
     scene: memory.scene, mood, memory, mode, imageUrl, enhancementOwner: memory.owner,
-    // Relive keeps the World Labs room, as before the integration branch.
-    worldMode: 'sample',
+    worldMode: symbolic?'symbolic':demo?'sample':'generated',
+    generatedWorld: memory.world,
     activeStep: panel === 'journey' ? activeStep : null,
     showAnchors: false, showMarkers: false,
     cameraResetKey: cameraReset,
@@ -80,7 +80,7 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   return <section ref={frame} className={`im-experience ${panel ? 'im-panel-open' : ''}`} aria-label="Immersive memory exploration">
     <div className="im-body"><div className="im-scene" aria-label="Interactive memory world">
       <div className="im-renderer" key={`${memory.id}:${cameraReset}`}>{hasWorld ? <WorldViewer {...renderProps} world={memory.world} /> : SceneRenderer ? <SceneRenderer {...renderProps} /> : <div className="im-unavailable"><h2>This world is still waiting.</h2><p>Your story and photographs are ready to revisit.</p></div>}</div>
-      <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit}>← Back to memory</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div><span className="im-mode-label">{symbolic ? demo ? 'SYMBOLIC DEMO' : 'SYMBOLIC FALLBACK' : mode === 'edit' ? 'EDIT MODE' : 'EXPLORE'}</span></div>
+      <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit}>← Back to memory</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div><span className="im-mode-label">{symbolic ? 'SYMBOLIC FALLBACK' : demo ? 'SAVED SAMPLE' : mode === 'edit' ? 'EDIT MODE' : 'EXPLORE'}</span></div>
       {photoError && <p className="im-fullscreen-error" role="alert">{photoError}</p>}
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">

@@ -45,7 +45,7 @@ test('30-day cutoff stops new reservations, keeps previous jobs readable and ide
  await assert.rejects(()=>d.db.exec("update world_generation_demo set expires_at=starts_at+interval '31 days'"));
 }));
 test('rate limits, in-flight cap and disabled flag stop new jobs',()=>withDb(async d=>{
- await d.db.exec('update world_generation_demo set max_in_flight=1');await d.reserve(A,'a');assert.equal((await d.reserve(B,'b')).error,'busy');
+ await d.db.exec('update world_generation_demo set max_in_flight=1');await d.reserve(A,'a');assert.equal((await d.reserve(B,'b')).error,'in_flight_limit');
  await d.db.exec('update world_generation_demo set enabled=false');assert.equal((await d.reserve(B,'c')).error,'disabled');
  for(let i=0;i<10;i++)await d.reserve(A,'a');assert.equal((await d.reserve(A,'a')).error,'rate_limit');
 }));
