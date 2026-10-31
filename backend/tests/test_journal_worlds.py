@@ -1,13 +1,14 @@
 import io
 import os
 import unittest
+import httpx
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 from PIL import Image
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from backend.main import app
-from backend.world_accounts import get_accounts, authenticated_user
+from backend.world_accounts import get_accounts, authenticated_user, authenticated_journal_user, SupabaseWorlds
 from backend.journal_worlds import public_job
 from backend.worlds import get_job
 
@@ -70,10 +71,20 @@ class JournalWorldTests(unittest.TestCase):
         self.assertEqual(response.json(),{'revision':1})
         manifest={'worldId':'foreign','enhancements':[],'source':'user','fallback':False}
         self.assertEqual(self.client.post(url,json={'revision':1,'enhancements':manifest},headers=headers).status_code,422)
-    def test_journal_worlds_require_existing_google_identity(self):
-        self.accounts.profile={'identities':[{'provider':'email'}]}
-        self.assertEqual(self.read().status_code,401)
-        self.assertEqual(self.accounts.reservations,0)
+    def test_verified_accounts_can_read_without_generating_regardless_of_provider(self):
+        with patch('backend.journal_worlds.provider',new_callable=AsyncMock) as provider:
+            for name in ('google','email'):
+                with self.subTest(provider=name):
+                    self.accounts.profile={'identities':[{'provider':name}]}
+                    self.assertEqual(self.read().status_code,200)
+                    self.assertEqual(self.accounts.reservations,0)
+            provider.assert_not_called()
+    def test_invalid_session_cannot_read_or_reserve(self):
+        with patch('backend.journal_worlds.provider',new_callable=AsyncMock) as provider:
+            headers={'Authorization':'Bearer invalid-session'}
+            self.assertEqual(self.client.get('/api/journal/'+MEMORY+'/world',headers=headers).status_code,401)
+            self.assertEqual(self.client.post('/api/journal/'+MEMORY+'/world',json={'approved':True},headers=headers).status_code,401)
+            self.assertEqual(self.accounts.reservations,0);provider.assert_not_called()
     def test_requires_authentication(self):
         self.assertEqual(self.client.get('/api/journal/'+MEMORY+'/world').status_code,401)
     def test_foreign_entry_never_reaches_provider(self):
@@ -145,3 +156,20 @@ class ArchiveTransferTests(unittest.IsolatedAsyncioTestCase):
         from backend.world_archive import archive_world
         with patch.dict(os.environ,{'WORLD_ASSET_RETENTION_APPROVED':'false'}):
             with self.assertRaises(HTTPException):await archive_world(None,USER,JOB,{})
+
+class JournalIdentityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_real_adapter_rejects_anonymous_and_malformed_accounts_for_every_provider(self):
+        with patch.dict(os.environ,{'SUPABASE_URL':'https://existing.supabase.test','SUPABASE_SERVICE_ROLE_KEY':'synthetic-service-key'},clear=True):
+            for provider in ('google','email'):
+                for profile in ({'id':USER,'is_anonymous':True},{'id':'invalid-id'}):
+                    with self.subTest(provider=provider,profile=profile):
+                        response={**profile,'identities':[{'provider':provider}]}
+                        requests=[]
+                        def handle(request):
+                            requests.append(request.url.path)
+                            return httpx.Response(200,json=response)
+                        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+                            with self.assertRaises(HTTPException) as error:
+                                await authenticated_journal_user('Bearer synthetic-session',SupabaseWorlds(client))
+                            self.assertEqual(error.exception.status_code,401)
+                        self.assertEqual(requests,['/auth/v1/user'])
