@@ -11,6 +11,9 @@ import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld, placeEnhancementsFromPhoto, spreadEnhancementsInRoom } from '../enhancements/schema.js';
 import { loadFurniture } from '../enhancements/generation.js';
 import { saveManifest } from '../enhancements/cache.js';
+import { createSensoryEngine } from '../sensory/audio.js';
+import { parseSensoryResponse, sensoryRequestFromMemory } from '../sensory/cues.js';
+import { requestSensoryCues } from '../sensory/sensoryApi.js';
 
 function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quality}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
@@ -93,6 +96,9 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
+// Senses are remembered, never emitted: the card always shows the evidence.
+const SENSE_LABELS = { sound: 'Sound', scent: 'Scent remembered', temperature: 'Temperature remembered', texture: 'Touch remembered', light: 'Light remembered' };
+
 export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null, mode = 'explore' }){
  // Only the saved sample room ships a predefined furniture demo. Journal worlds use
  // their saved manifest when one exists, otherwise they propose furniture once from
@@ -116,7 +122,10 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
  const [selectedEnhancement,setSelectedEnhancement]=useState(null);
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
  const [colliderMesh,setColliderMesh]=useState(null);
+ const [sensoryCues,setSensoryCues]=useState([]),[sensesOn,setSensesOn]=useState(false),[senseCard,setSenseCard]=useState(null),[passIndex,setPassIndex]=useState(-1);
  const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null),needsFit=useRef(false),roomRef=useRef(null),furnitureRequest=useRef(null);
+ const [sensory]=useState(createSensoryEngine);
+ const cardTimer=useRef(null),savedAnchorsRef=useRef(savedAnchors);
  const selectedAnchor=anchors.find(a=>a.id===selected);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
  const story=savedMemory?.story??scene?.description??'';
@@ -167,6 +176,26 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   load();
   return ()=>{active=false;controller.abort();};
  },[response,world.id,imageUrl,story,savedMemoryId,savedMemoryOwner,enhancementOwner,retryEnhancements,persistentExperience]);
+ // Sensory cues are deterministic and read only from the saved entry. They are
+ // recomputed on open, so nothing new is stored and no provider is called.
+ useEffect(()=>{savedAnchorsRef.current=savedAnchors;},[savedAnchors]);
+ useEffect(()=>{
+  const controller=new AbortController();
+  // oxlint-disable-next-line react/set-state-in-effect
+  setSensoryCues([]);setSenseCard(null);setPassIndex(-1);
+  const body=sensoryRequestFromMemory(savedMemory||{});
+  const known=new Set(body.anchors.map(anchor=>anchor.id));
+  for(const anchor of savedAnchorsRef.current||[]){
+   if(!anchor||typeof anchor.id!=='string'||known.has(anchor.id)||typeof anchor.memory!=='string'||!anchor.memory.trim())continue;
+   known.add(anchor.id);body.anchors.push({id:anchor.id,memory:anchor.memory.slice(0,2000)});
+  }
+  body.anchors=body.anchors.slice(0,40);
+  if(!body.story.trim()&&!body.anchors.length)return()=>controller.abort();
+  requestSensoryCues(body,{signal:controller.signal})
+   .then(payload=>{if(!controller.signal.aborted)setSensoryCues(parseSensoryResponse(payload));})
+   .catch(()=>{if(!controller.signal.aborted)setSensoryCues([]);});
+  return()=>controller.abort();
+ },[savedMemory]);
  useEffect(()=>{
   if(!cacheInfo||!['ai','saved'].includes(enhancementSource)||needsFit.current)return;
   let active=true;
@@ -204,6 +233,38 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
  },[colliderMesh]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
  function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform,anchor:'none'}:e)}));}
+ // Senses are shown as evidence cards; audio and haptics only when enabled.
+ function showSense(cue,{forceAudio=false}={}){
+  if(!cue)return;
+  setSenseCard(cue);
+  clearTimeout(cardTimer.current);
+  cardTimer.current=setTimeout(()=>setSenseCard(null),8000);
+  if(sensesOn||forceAudio)sensory.play(cue.engine,cue.intensity);
+  if(sensesOn&&typeof navigator!=='undefined'&&typeof navigator.vibrate==='function'){
+   const pattern=cue.kind==='temperature'?[40,60,40]:cue.kind==='texture'?[20,30,20,30,20]:null;
+   if(pattern)navigator.vibrate(pattern);
+  }
+ }
+ function focusSense(anchorId,forceAudio=false){
+  const matches=sensoryCues.filter(cue=>cue.anchorId===anchorId);
+  if(!matches.length)return false;
+  showSense(matches.find(cue=>cue.kind==='sound')||matches[0],{forceAudio});
+  return true;
+ }
+ function toggleSenses(){
+  const next=!sensesOn;setSensesOn(next);
+  if(!next){sensory.stop();setSenseCard(null);clearTimeout(cardTimer.current);return;}
+  if(selected)focusSense(selected,true);
+ }
+ function sensoryPass(){
+  if(!sensoryCues.length)return;
+  const next=(passIndex+1)%sensoryCues.length;setPassIndex(next);
+  const cue=sensoryCues[next];
+  if(cue.anchorId){setSelected(cue.anchorId);setSelectedEnhancement(null);}
+  else{setSelected(null);setSelectedEnhancement(null);}
+  setSensesOn(true);
+  showSense(cue,{forceAudio:true});
+ }
  // Collider grounding lands once per world load; write it to the baseline too so
  // "Reset" returns to the grounded placement, not the floating payload guess.
  function groundEnhancement(id,y){setEnhancementState(state=>{
@@ -213,7 +274,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
  function resetEnhancements(){
   setEnhancementState(state=>({...state,list:state.baseline.map(e=>({...e,position:[...e.position],rotation:[...e.rotation],scale:[...e.scale]}))}));
  }
- useEffect(()=>()=>{urls.current.forEach(url=>URL.revokeObjectURL(url));audio.current?.close();},[]);
+ useEffect(()=>()=>{urls.current.forEach(url=>URL.revokeObjectURL(url));audio.current?.close();sensory.dispose();clearTimeout(cardTimer.current);},[sensory]);
  useEffect(()=>{
   if(audio.current){audio.current.osc.frequency.setTargetAtTime({nostalgic:130.81,joyful:164.81,melancholic:110}[mood],audio.current.currentTime,.8);}
  },[mood]);
@@ -243,12 +304,13 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   for(const kind of ['photo','audio'])if(selectedAnchor?.[kind]){URL.revokeObjectURL(selectedAnchor[kind]);urls.current.delete(selectedAnchor[kind]);}
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
- return <Boundary><div data-world-state={status.startsWith('Loaded') ? 'ready' : 'loading'} data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} className={`world-host immersive-world ${mood} ${embedded && mode !== 'edit'?'mv-clean-viewer':''}`}>
+ const senseWarmth=senseCard?.kind==='temperature'?(/cold|chill|frost|winter|snow|ice|cool/.test(senseCard.label.toLowerCase())?'cool':'warm'):null;
+ return <Boundary><div data-world-state={status.startsWith('Loaded') ? 'ready' : 'loading'} data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} data-sense={senseWarmth||undefined} className={`world-host immersive-world ${mood} ${embedded && mode !== 'edit'?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
-   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={(selected===a.id||podcastCue?.anchor_id===a.id)?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
+   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);focusSense(a.id);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={(selected===a.id||podcastCue?.anchor_id===a.id)?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
    <PodcastFocus controls={controls} cue={podcastCue} anchors={anchors} ready={status.startsWith('Loaded')}/>
    <CameraJourney controls={controls} journey={podcastCue?0:journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
@@ -260,7 +322,21 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <button aria-pressed={quality==='full'} onClick={()=>setQuality(q=>q==='full'?'balanced':'full')}>{quality==='full'?'Full detail · switch to smooth':'Smooth · load full detail'}</button>
    <button onClick={()=>setJourney(n=>n+1)}>Return to memory</button>
    <button aria-pressed={ambience} onClick={toggleAmbience}>{ambience?'Mute ambience':'Play gentle ambience'}</button>
+   <button aria-pressed={sensesOn} onClick={toggleSenses}>{sensesOn?'Senses on':'Senses off'}</button>
+   <button disabled={!sensoryCues.length} onClick={sensoryPass}>Sensory pass</button>
   </div>}
+  {!showTools&&<div className="sense-play" role="group" aria-label="Senses">
+   <button aria-pressed={sensesOn} onClick={toggleSenses}>{sensesOn?'Senses on':'Senses off'}</button>
+   <button disabled={!sensoryCues.length} onClick={sensoryPass}>Sensory pass</button>
+  </div>}
+  {senseCard&&<aside className="sense-card" aria-live="polite" aria-label="Sensory memory cue">
+   <p className="sense-card-kind">{SENSE_LABELS[senseCard.kind]}</p>
+   <h2>{senseCard.label}</h2>
+   <p>{senseCard.detail}</p>
+   <blockquote>“{senseCard.quote}”</blockquote>
+   <p className="sense-card-source">{senseCard.source==='anchor'?'From this memory':'From your story'} · remembered from your words</p>
+   <button type="button" onClick={()=>{setSenseCard(null);sensory.stop();clearTimeout(cardTimer.current);}}>Close</button>
+  </aside>}
   {showTools && <section className="enhancement-panel" aria-label="Enhanced objects">
    <header><div><p className="enhancement-eyebrow">HIGH-DETAIL OVERLAY</p><h2>Enhanced objects</h2></div>
     <button aria-pressed={calibrating} onClick={()=>setCalibrating(value=>!value)}>{calibrating?'Done':'Calibrate'}</button></header>

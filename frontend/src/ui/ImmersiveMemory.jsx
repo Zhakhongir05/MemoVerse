@@ -5,7 +5,7 @@ import MemoryPodcast from './MemoryPodcast.jsx'
 import MemoryIcon from './MemoryIcon.jsx'
 import { useMemoryPhoto } from './useMemoryPhoto.js'
 
-export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, JourneyController, steps, activeStep, onStepChange, initialMode, editor, onBeginEdit, onCancelEdit, onExit, onOpenStudio, symbolic = false, savedToken, error, saving, user, favorite = false, onFavorite, favoriteBusy = false }) {
+export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, JourneyController, steps, activeStep, onStepChange, initialMode, editor, onBeginEdit, onCancelEdit, onExit, onOpenStudio, symbolic = false, demo = false, savedToken, error, saving, user, favorite = false, onFavorite, favoriteBusy = false }) {
   const { url: imageUrl, error: photoError } = useMemoryPhoto(memory)
   const [mode, setMode] = useState('explore')
   const [panel, setPanel] = useState(null)
@@ -78,13 +78,13 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   return <section ref={frame} className={`im-experience ${panel ? 'im-panel-open' : ''}`} aria-label="Immersive memory exploration">
     <div className="im-body"><div className="im-scene" aria-label="Interactive memory world">
       <div className="im-renderer" key={`${memory.id}:${cameraReset}`}>{hasWorld ? <WorldViewer {...renderProps} world={memory.world} /> : SceneRenderer ? <SceneRenderer {...renderProps} /> : <div className="im-unavailable"><h2>This world is still waiting.</h2><p>Your story and photographs are ready to revisit.</p></div>}</div>
-      <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit} aria-label="Back to memory">← Back</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div>{symbolic && <span className="im-mode-label">Sample</span>}</div>
+      <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit} aria-label="Back to memory">← Back</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div>{symbolic || demo ? <span className="im-mode-label">Sample</span> : null}</div>
       {photoError && <p className="im-fullscreen-error" role="alert">{photoError}</p>}
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
       <div className="im-audio-status" hidden={!listening}><MemoryPodcast key={memory.id} compact autoPlay={listening} onPlaybackChange={setPodcastCue} memory={memory} user={user} /></div>
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">
         <Tool label="Listen" icon="headphones" active={listening} onClick={() => setListening(value => !value)} />
-        <Tool label={favorite ? 'Favorited' : 'Favorite'} icon="heart" active={favorite} onClick={onFavorite} disabled={favoriteBusy} />
+        <Tool label={favorite ? 'Favorited' : 'Favorite'} icon="heart" active={favorite} onClick={onFavorite} disabled={favoriteBusy || demo} />
         <Tool label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} icon="expand" active={fullscreen} onClick={toggleFullscreen} />
         <Tool label="More" icon="more" active={!!panel} onClick={event => openPanel('options', event)} disabled={saving} />
       </div>

@@ -1,9 +1,10 @@
 import {savedWorldId,rememberWorld,clearWorldLocation} from './savedWorldLocation.js'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { formatMemoryDate, journeySteps, listEntries, localDate, markEntryDeleted, MOODS, saveEntry, validateEntry } from './journalStore'
 import { importGuestEntries, syncJournal } from './journalCloud'
 import './Dashboard.css'
 import './Journal.css'
+import '../3d_world/scene.css'
 import MemoryTimeline from './MemoryTimeline'
 import ImmersiveMemory from './ImmersiveMemory'
 import SpeechInput from './SpeechInput.jsx'
@@ -32,6 +33,25 @@ function Photo({ file, alt, ...props }) {
 }
 
 const emptyDraft = () => ({ title: '', date: localDate(), story: '', mood: 'Nostalgic', photos: [], audio: null, scene: null, world: null })
+
+// A demo needs no account and no saved world, so it renders the World Labs room
+// directly instead of the saved-world wrapper (which asks the server for assets).
+// The top bar labels it "Sample" and the story below is written for the demo only.
+const DemoWorld = lazy(() => import('../integration/WorldLabsViewer.jsx'))
+function DemoWorldViewer(props) {
+  return <div className="mv-hybrid-scene mv-demo-world">
+    <Suspense fallback={<p className="mv-demo-loading" role="status">Opening the sample room…</p>}>
+      <DemoWorld {...props} />
+    </Suspense>
+  </div>
+}
+const DEMO_MEMORY = {
+  ...emptyDraft(),
+  id: 'sample-room',
+  title: 'A room to remember',
+  story: 'Rain taps at the window and a fire is crackling in the grate. The room smells of woodsmoke and fresh bread. Cold floorboards give way to a soft rug, and lamplight pools across the table.',
+  world: { ...existingWorld, source: 'sample' },
+}
 
 /** WorldViewer is the team's existing World Labs component, when available.
  * JourneyController can synchronize AI narration/camera poses with activeStep.
@@ -302,7 +322,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
         setSelected(memory); setDemo(false); rememberWorld(memory.id)
         setGenerationRequest(crypto.randomUUID()); setView('prepare')
       }}
-      onDemo={() => { setSelected({ ...emptyDraft(), id: 'symbolic-demo', title: 'A room to remember', story: 'Warm light falls across a familiar room. Take a moment to look around.', date: localDate() }); setDemo(true); relive('free', true) }}
+      onDemo={() => { setSelected({ ...DEMO_MEMORY, date: localDate() }); setDemo(true); clearWorldLocation(); setSymbolic(false); setJourneyMode('free'); setActiveStep(0); setView('relive'); setNotice('') }}
       guestImport={user && <button className="mj-back" disabled={syncing || saving} onClick={async () => {
         if (!canLeave() || saveLock.current || syncLock.current) return
         saveLock.current = true; setSaving(true)
@@ -330,7 +350,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }
     }} />}
-    {view === 'relive' && selected && <ImmersiveMemory user={user} favorite={!!favorites[selected.id]} onFavorite={() => toggleFavorite(selected)} favoriteBusy={favoriteBusy} symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) {clearWorldLocation();setView(demo ? 'journal' : 'detail')} }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
+    {view === 'relive' && selected && <ImmersiveMemory user={user} favorite={!!favorites[selected.id]} onFavorite={() => toggleFavorite(selected)} favoriteBusy={favoriteBusy} symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={demo ? DemoWorldViewer : WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) {clearWorldLocation();setView(demo ? 'journal' : 'detail')} }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
 
   </main>
 }
