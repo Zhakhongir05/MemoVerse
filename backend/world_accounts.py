@@ -4,6 +4,15 @@ from uuid import UUID
 import httpx
 from fastapi import Depends, Header, HTTPException
 
+def supabase_headers(key,token=None):
+    # New secret API keys are not JWTs. User sessions remain Bearer JWTs.
+    headers={'apikey':key}
+    if token:
+        headers['Authorization']='Bearer '+token
+    elif not key.startswith('sb_secret_'):
+        headers['Authorization']='Bearer '+key
+    return headers
+
 def unavailable():return HTTPException(503,'World generation is not configured. Please try again later.')
 
 class SupabaseWorlds:
@@ -13,7 +22,7 @@ class SupabaseWorlds:
         if not self.url.startswith('https://') or not self.key:raise unavailable()
         self.client=client
     async def request(self,path,*,token=None,body=None):
-        headers={'apikey':self.key,'Authorization':'Bearer '+(token or self.key)}
+        headers=supabase_headers(self.key,token)
         try:
             if self.client:
                 response=await self.client.request('POST' if body is not None else 'GET',self.url+path,headers=headers,json=body)

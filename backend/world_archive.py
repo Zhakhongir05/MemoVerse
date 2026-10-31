@@ -5,6 +5,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import HTTPException
 from .worlds import asset_url
+from .world_accounts import supabase_headers
 
 async def archive_world(accounts, user_id, job_id, world):
     if os.getenv('WORLD_ASSET_RETENTION_APPROVED','false').lower() != 'true':
@@ -16,7 +17,7 @@ async def archive_world(accounts, user_id, job_id, world):
         for key, name in [('splatUrl','world.spz'), ('colliderUrl','collider.glb')]:
             url = asset_url(world[key]); path = f'{user_id}/{job_id}/{name}'
             target = accounts.url+'/storage/v1/object/memory-worlds/'+quote(path, safe='/')
-            headers = {'apikey': accounts.key, 'Authorization': 'Bearer '+accounts.key}
+            headers = supabase_headers(accounts.key)
             existing = await client.head(target, headers=headers)
             if existing.status_code != 200:
                 if existing.status_code not in (400,404): raise HTTPException(503,'Archive status unavailable.')

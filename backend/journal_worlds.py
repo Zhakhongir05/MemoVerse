@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from .world_accounts import authenticated_journal_user, get_accounts
+from .world_accounts import authenticated_journal_user, get_accounts, supabase_headers
 from .worlds import enabled, provider
 
 router = APIRouter()
@@ -23,7 +23,7 @@ def memory_uuid(value):
     except ValueError: raise HTTPException(404, 'Memory not found for this account.') from None
 
 async def storage(accounts, method, path, *, body=None, headers=None):
-    auth = {'apikey': accounts.key, 'Authorization': 'Bearer '+accounts.key}
+    auth = supabase_headers(accounts.key)
     auth.update(headers or {})
     try:
         async with httpx.AsyncClient(timeout=45, follow_redirects=False) as client:
