@@ -24,7 +24,7 @@ def wav():
     out=io.BytesIO()
     with wave.open(out,'wb') as f:f.setnchannels(1);f.setsampwidth(2);f.setframerate(8000);f.writeframes(b'\x00\x00'*8000)
     return out.getvalue()
-def draft(context):return TourDraft.model_validate({'chapters':[{'order':i+1,'anchor_id':'desk-1' if context['anchors'] else None,'excerpts':[{'source_id':'journal:story','quote':context['sources']['journal:story'][:100]}],'ambience':'quiet'} for i in range(3)]})
+def draft(context):return TourDraft.model_validate({'chapters':[{'order':i+1,'narration':'The wooden desk sits beside the window. Your entry recalls listening to the rain there.','anchor_id':'desk-1' if context['anchors'] else None,'excerpts':[{'source_id':'journal:story','quote':context['sources']['journal:story'][:100]}],'ambience':'quiet'} for i in range(3)]})
 def completion(value):return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',message=SimpleNamespace(content=json.dumps(value),refusal=None))])
 
 class Contracts(unittest.TestCase):
@@ -40,12 +40,12 @@ class Contracts(unittest.TestCase):
     def test_missing_anchors_get_safe_poses_and_no_fabricated_personal_story(self):
         m=memory();m['scene']=None;ctx=context_for(m,A,'en');tour=render_tour(draft(ctx),ctx)
         self.assertIsNone(tour['chapters'][0]['anchor_id']);self.assertEqual(tour['chapters'][0]['camera']['position'],[.25,.1,.45])
-        self.assertIn(m['story'],tour['chapters'][0]['narration'])
+        self.assertNotIn('Take a breath',tour['chapters'][0]['narration'])
     def test_unknown_anchor_invented_quote_or_extra_prose_is_rejected(self):
         ctx=context_for(memory(),A,'en')
         value=draft(ctx);value.chapters[0].anchor_id='invented';self.assertRaises(ValueError,render_tour,value,ctx)
         value=draft(ctx);value.chapters[0].excerpts[0].quote='My grandfather took me there.';self.assertRaises(ValueError,render_tour,value,ctx)
-        value=draft(ctx);ctx['sources']['photo:1']='A model-invented relative.';value.chapters[0].excerpts[0].source_id='photo:1';value.chapters[0].excerpts[0].quote=ctx['sources']['photo:1'];self.assertRaises(ValueError,render_tour,value,ctx)
+        value=draft(ctx);value.chapters[0].narration='Take a deep breath. There is no need to hurry.';self.assertRaises(ValueError,render_tour,value,ctx)
         data=draft(ctx).model_dump();data['narration']='Invented';self.assertRaises(ValueError,TourDraft.model_validate,data)
         value=draft(ctx);value.chapters[0].order=3;self.assertRaises(ValueError,render_tour,value,ctx)
     def test_private_photos_must_belong_to_this_account_and_memory(self):
@@ -57,11 +57,40 @@ class Contracts(unittest.TestCase):
             with self.assertRaises((ValueError,wave.Error,EOFError)):audio_duration(data)
 
 class Providers(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.env=patch.dict(os.environ,{'MEMORYCAST_SCRIPT_PROVIDER':'deepseek'});self.env.start();self.addCleanup(self.env.stop)
+    async def test_openai_script_mode_does_not_require_lablup_access(self):
+        ctx=context_for(memory(),A,'en');create=AsyncMock(return_value=completion(draft(ctx).model_dump()))
+        pipeline=SimpleNamespace(openai=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),deepseek=None,settings=SimpleNamespace(openai_model='existing-openai-model'))
+        with patch.dict(os.environ,{'MEMORYCAST_SCRIPT_PROVIDER':'openai'}):
+            provider=TourProvider(pipeline);self.assertTrue(provider.configured());await provider.script(ctx)
+        self.assertEqual(create.call_args.kwargs['model'],'existing-openai-model')
     async def test_lablup_uses_existing_model_and_grounded_contract(self):
         ctx=context_for(memory(),A,'en');deep=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion(draft(ctx).model_dump())))))
         pipeline=SimpleNamespace(deepseek=deep,openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
         result=await TourProvider(pipeline).script(ctx);self.assertEqual(result['chapters'][0]['anchor_id'],'desk-1')
         call=deep.chat.completions.create.call_args.kwargs;self.assertEqual(call['model'],'existing-lablup-model');self.assertEqual(call['timeout'],18)
+    async def test_spoken_script_preserves_photo_specific_prose_and_journal_evidence(self):
+        outputs=[]
+        for detail in ['A red chair beside a sunlit window.', 'A blue bicycle against a brick wall.']:
+            ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']=detail
+            value=draft(ctx).model_dump()
+            for c in value['chapters']:
+                c['narration']=detail+' Your journal recalls listening to rain by the wooden desk.'
+                c['excerpts']=[{'source_id':'photo:1','quote':detail},{'source_id':'journal:story','quote':ctx['sources']['journal:story']}]
+            create=AsyncMock(return_value=completion(value))
+            pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+            result=await TourProvider(pipeline).script(ctx)
+            self.assertEqual(result['chapters'][0]['narration'],value['chapters'][0]['narration'])
+            self.assertIn(detail,result['chapters'][1]['narration'])
+            self.assertNotIn('Take a breath',result['chapters'][0]['narration'])
+            outputs.append(result)
+        self.assertNotEqual(outputs[0]['chapters'][0]['narration'],outputs[1]['chapters'][0]['narration'])
+    async def test_photo_evidence_is_required_when_a_photo_was_analyzed(self):
+        ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']='A red chair.'
+        create=AsyncMock(return_value=completion(draft(ctx).model_dump()))
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        with self.assertRaises(ValueError):await TourProvider(pipeline).script(ctx)
     async def test_saved_photo_vision_reuses_existing_openai_client(self):
         value={'objects':[{'description':'A red synthetic image','location':'center'}],'spatial_layout':'A flat test image','lighting':'Even light','colors':['red'],'uncertainty':'Synthetic test image only'}
         create=AsyncMock(return_value=completion(value))

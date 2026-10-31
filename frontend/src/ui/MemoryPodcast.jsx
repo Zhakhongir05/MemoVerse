@@ -10,12 +10,12 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange }) {
     return()=>request.abort()
   },[memory.id,memory.updatedAt,userId,reload])
   useEffect(()=>()=>onPlaybackChange?.(null),[onPlaybackChange])
-  async function create(){
+  async function create(regenerate=false){
     if(busy)return
     setBusy(true);setError('')
     try{
       const signal=controller.current.signal
-      let {tour}=await memorycastRequest('/memories/'+memory.id,{method:'POST',body:{approved:true,language:'en'},signal})
+      let {tour}=await memorycastRequest('/memories/'+memory.id,{method:'POST',body:{approved:true,language:'en',regenerate},signal})
       setResult(current=>({...current,tour}))
       // Each server step is leased and persisted. Replaying uses GET only.
       for(let step=0;step<11 && tour.status==='pending';step++){
@@ -32,8 +32,8 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange }) {
     {error&&<><p role="alert">{error}</p><button type="button" disabled={busy} onClick={()=>setReload(n=>n+1)}>Retry loading podcast</button></>}
     {!error && result && !result.generation_enabled && !ready && <p role="status">{result.generation_reason==='memorycast_database_disabled' ? 'Podcast creation is disabled in the database. The owner must enable MemoryCast.' : result.generation_reason==='memorycast_providers_unconfigured' ? 'Podcast providers are not configured on the server.' : 'Podcast creation is disabled on the server. The owner must configure MEMORYCAST_LIVE_ENABLED.'}</p>}
     {tour?.message&&<p role="status">{tour.message}</p>}
-    {ready&&part?<><p>AI-generated narration · Chapter {chapter+1} of 3</p><h3>{part.title}</h3><p>{part.narration}</p><audio onPlay={()=>onPlaybackChange?.(part)} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2)setChapter(n=>n+1)}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls preload="none" src={tour.audio?.[chapter]?.url}/><button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n-1)}}>Previous chapter</button><button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n+1)}}>Next chapter</button>{result.stale&&<p>This is the saved podcast from an earlier version of your entry. Replaying does not regenerate it.</p>}</>:
-      <button type="button" disabled={busy || !user || !result?.generation_enabled || ['uncertain','failed'].includes(tour?.status)} onClick={create}>{busy?'Creating your podcast…':tour?.status==='pending'?'Continue podcast creation':'Create podcast from saved entry'}</button>}
+    {ready&&part?<><p>AI-generated narration · Chapter {chapter+1} of 3</p><h3>{part.title}</h3><p>{part.narration}</p><audio onPlay={()=>onPlaybackChange?.(part)} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2)setChapter(n=>n+1)}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls preload="none" src={tour.audio?.[chapter]?.url}/><button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n-1)}}>Previous chapter</button><button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);setChapter(n=>n+1)}}>Next chapter</button>{result.stale&&<><p>This saved podcast uses an older entry or narration style. Replay is free of new generation calls.</p><button type="button" disabled={busy || !result.generation_enabled} onClick={()=>create(true)}>{busy?'Creating personalized narration…':'Generate updated personalized podcast'}</button><p>Generating an updated version uses AI providers and your narration allowance.</p></>}</>:
+      <button type="button" disabled={busy || !user || !result?.generation_enabled || ['uncertain','failed'].includes(tour?.status)} onClick={()=>create()}>{busy?'Creating your podcast…':tour?.status==='pending'?'Continue podcast creation':'Create podcast from saved entry'}</button>}
     {!ready&&<p>The creation button sends the saved entry to AI providers for narration. Dictation only fills in your editable text.</p>}
   </section>
 }
