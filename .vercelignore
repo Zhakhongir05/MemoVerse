@@ -9,3 +9,11 @@ frontend/dist/**
 docs/**
 
 .git
+
+frontend/e2e/**
+frontend/playwright.config.js
+frontend/test-results/**
+frontend/playwright-report/**
+
+backend/tests/**
+backend/requirements-dev.txt

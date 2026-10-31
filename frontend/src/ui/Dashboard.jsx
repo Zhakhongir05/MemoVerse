@@ -223,7 +223,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
         {memorySave.status === 'error' && <><p role="alert" className="mv-error">{memorySave.error}</p><button type="button" onClick={memorySave.save}>Retry saving</button></>}
         <p className="mv-fine">Photo and audio upload to private storage. Your story, mood, and scene data save to your database.</p>
       </div>}
-      <WorldGeneration file={file} description={description} onReady={world=>{setGeneratedWorld(world);setWorldMode('generated');setFailure('');setScreen('world')}}/>
+      <WorldGeneration user={user} onExploreSample={()=>{setWorldMode('sample');setFailure('');setScreen('world')}} file={file} description={description} onReady={world=>{setGeneratedWorld(world);setWorldMode('generated');setFailure('');setScreen('world')}}/>
       </div>
       <div className="mv-preview-panel mv-glass" aria-label="Memory world preview">
         <div className="mv-preview-header"><div><p className="mv-eyebrow">A SPACE TO STEP INTO</p><h2>Your memory world</h2></div><span className="mv-status">{pending ? 'PLANNING SYMBOLIC SCENE' : failure ? 'GENERATION FAILED' : worldLabel}</span></div>

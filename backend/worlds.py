@@ -1,87 +1,26 @@
-"""Explicit, disabled-by-default Marble jobs. No background tasks in serverless workers."""
+"""World Labs jobs and 3-per-account allowances in the existing Supabase database."""
 import base64
 import hashlib
-import hmac
-import json
 import os
-import sqlite3
-import time
-from datetime import datetime, timezone
+import re
+from datetime import datetime,timedelta,timezone
 from urllib.parse import urlparse
+from uuid import uuid4
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, UploadFile
+from fastapi import APIRouter,Depends,File,Form,HTTPException,UploadFile
+from .world_accounts import get_accounts,authenticated_user
+router=APIRouter()
+BASE='https://api.worldlabs.ai/marble/v1'
 
-router = APIRouter()
-BASE = 'https://api.worldlabs.ai/marble/v1'
-
-class JobStore:
-    """Redis REST for serverless; SQLite only on a persistent non-Vercel host."""
-    def __init__(self):
-        self.url = os.getenv('WORLD_REDIS_REST_URL', '')
-        self.token = os.getenv('WORLD_REDIS_REST_TOKEN', '')
-        self.path = os.getenv('WORLD_JOB_DB', '')
-        if not self.url and (os.getenv('VERCEL') or not self.path):
-            raise HTTPException(503, 'World generation requires durable job storage.')
-        if self.url and (not self.url.startswith('https://') or not self.token):
-            raise HTTPException(503, 'World job storage is not configured.')
-        if not self.url:
-            with sqlite3.connect(self.path) as db:
-                db.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, value TEXT NOT NULL)')
-    async def redis(self, *command):
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.post(self.url, headers={'Authorization': f'Bearer {self.token}'}, json=list(command))
-                response.raise_for_status()
-                payload = response.json()
-                if payload.get('error'): raise ValueError()
-                return payload['result']
-        except (httpx.HTTPError, ValueError, KeyError):
-            raise HTTPException(503, 'World job storage unavailable. No new generation was started.') from None
-    async def get(self, key):
-        if self.url:
-            value = await self.redis('GET', 'memoverse:world:' + key)
-        else:
-            with sqlite3.connect(self.path) as db:
-                row = db.execute('SELECT value FROM jobs WHERE id=?', (key,)).fetchone()
-                value = row[0] if row else None
-        return json.loads(value) if value else None
-    async def reserve(self, key, value, cap):
-        # Atomic across processes/instances. Reservations never expire automatically:
-        # an ambiguous provider POST must never cause an automatic paid resubmission.
-        if self.url:
-            script = """if redis.call('EXISTS',KEYS[1])==1 then return 0 end
-if tonumber(redis.call('GET',KEYS[2]) or '0')>=tonumber(ARGV[2]) then return -1 end
-redis.call('SET',KEYS[1],ARGV[1]); redis.call('INCR',KEYS[2]); return 1"""
-            result = await self.redis('EVAL', script, 2, 'memoverse:world:' + key, 'memoverse:world:budget', json.dumps(value), cap)
-        else:
-            with sqlite3.connect(self.path) as db:
-                db.execute('BEGIN IMMEDIATE')
-                if db.execute('SELECT 1 FROM jobs WHERE id=?', (key,)).fetchone(): return False
-                if db.execute('SELECT COUNT(*) FROM jobs').fetchone()[0] >= cap:
-                    raise HTTPException(429, 'World generation budget reached. Contact the project owner.')
-                db.execute('INSERT INTO jobs VALUES (?,?)', (key, json.dumps(value)))
-            return True
-        if result == -1: raise HTTPException(429, 'World generation budget reached. Contact the project owner.')
-        return result == 1
-    async def save(self, key, value):
-        if self.url:
-            await self.redis('SET', 'memoverse:world:' + key, json.dumps(value))
-        else:
-            with sqlite3.connect(self.path) as db:
-                db.execute('UPDATE jobs SET value=? WHERE id=?', (json.dumps(value), key))
-
-def authorize(authorization: str = Header(default='')):
-    token = os.getenv('WORLD_GENERATION_ACCESS_TOKEN', '')
-    if not token or not hmac.compare_digest(authorization, 'Bearer ' + token):
-        raise HTTPException(403, 'A generation access code from the project owner is required.')
-
-def get_store(): return JobStore()
+def enabled():
+    if os.getenv('WORLD_GENERATION_ENABLED','false').lower()!='true' or not os.getenv('WLT_API_KEY'):
+        raise HTTPException(503,'New world generation is currently unavailable. You can revisit saved worlds.')
 
 async def provider(method, path, body=None):
     key = os.getenv('WLT_API_KEY', '')
     if not key: raise HTTPException(503, 'World Labs credentials are not configured.')
     try:
-        async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=20 if method=='POST' else 10, follow_redirects=False) as client:
             response = await client.request(method, BASE + '/' + path, headers={'WLT-Api-Key': key}, json=body)
             if response.status_code in (404, 410): raise HTTPException(410, 'World Labs job or world expired.')
             response.raise_for_status()
@@ -109,77 +48,77 @@ def world_result(world):
     except (KeyError, TypeError):
         raise HTTPException(502, 'World Labs result is missing its SPZ or collider.') from None
 
-def public(job):
-    return {key: job.get(key) for key in ['job_id', 'status', 'world', 'message', 'expires_at']}
+@router.get('/api/world-config')
+async def world_config(accounts=Depends(get_accounts)):
+    try:
+        enabled();result=await accounts.rpc('mv_world_config',{})
+        return result
+    except HTTPException:
+        return {'enabled':False,'limit':3,'message':'New world generation is currently unavailable. Explore a saved world instead.'}
 
-@router.post('/api/world-jobs', dependencies=[Depends(authorize)], status_code=202)
-async def create_job(story: str = Form(...), photo: UploadFile = File(...), approved: bool = Form(False), store=Depends(get_store)):
-    from .main import validate_photo, MAX_PHOTO_BYTES
+@router.get('/api/world-account')
+async def account_state(user_id=Depends(authenticated_user),accounts=Depends(get_accounts)):
+    return await accounts.rpc('mv_world_account',{'p_user_id':user_id})
+
+@router.post('/api/world-jobs',status_code=202)
+async def create_job(story: str=Form(...),photo: UploadFile=File(...),approved: bool=Form(False),user_id=Depends(authenticated_user),accounts=Depends(get_accounts)):
+    from .main import validate_photo,MAX_PHOTO_BYTES
     from starlette.concurrency import run_in_threadpool
     try:
-        if not approved: raise HTTPException(400, 'Explicit paid generation approval is required.')
-        story = story.strip()
-        if not story or len(story) > 2000: raise HTTPException(422, 'Enter a memory of 1–2000 characters.')
-        data = await photo.read(MAX_PHOTO_BYTES + 1)
-        if len(data) > MAX_PHOTO_BYTES: raise HTTPException(413, 'Photo is too large.')
-        await run_in_threadpool(validate_photo, data, photo.content_type)
-        model = os.getenv('WORLD_LABS_MODEL', 'marble-1.1')
-        key = hashlib.sha256(b'memoverse-world-v1\0' + model.encode() + b'\0' + story.encode() + b'\0' + data).hexdigest()
-        existing = await store.get(key)
-        if existing: return public(existing)
-        if os.getenv('WORLD_GENERATION_ENABLED', 'false').lower() != 'true':
-            raise HTTPException(503, 'Paid world generation is disabled pending project-owner approval.')
-        if not os.getenv('WLT_API_KEY'): raise HTTPException(503, 'World Labs credentials are not configured.')
+        enabled()
+        if not approved:raise HTTPException(400,'Please confirm that your photograph and story may be sent to World Labs.')
+        story=story.strip()
+        if not story or len(story)>2000:raise HTTPException(422,'Enter a memory of 1–2000 characters.')
+        data=await photo.read(MAX_PHOTO_BYTES+1)
+        if len(data)>MAX_PHOTO_BYTES:raise HTTPException(413,'Photo is too large.')
+        await run_in_threadpool(validate_photo,data,photo.content_type)
+        submission=hashlib.sha256(b'memoverse-world-v2\0'+hashlib.sha256(data).digest()+b'\0'+story.encode()).hexdigest()
+        claim=await accounts.rpc('mv_world_reserve',{'p_user_id':user_id,'p_submission':submission,'p_job_id':str(uuid4())})
+        job=claim['job']
+        if not claim['fresh']:return job
+        # A committed SQL reservation is required before this ONE paid POST.
         try:
-            cap = int(os.getenv('WORLD_MAX_JOBS', '1'))
-            if cap < 1: raise ValueError()
-        except ValueError:
-            raise HTTPException(503, 'World generation budget is not configured.') from None
-        job = {'job_id': key, 'status': 'submitting', 'created': time.time(), 'message': 'Submitting world generation…'}
-        if not await store.reserve(key, job, cap):
-            return public(await store.get(key))
-        try:
-            operation = await provider('POST', 'worlds:generate', {'display_name': 'MemoVerse memory', 'model': model, 'permission': {'public': False}, 'world_prompt': {'type': 'image', 'text_prompt': story, 'image_prompt': {'source': 'data_base64', 'data_base64': base64.b64encode(data).decode()}}})
-            operation_id = operation['operation_id']
-            # IDs are provider data, never permit path injection.
-            if not isinstance(operation_id, str) or not operation_id.replace('-', '').isalnum(): raise ValueError()
-            job.update(status='pending', operation_id=operation_id, expires_at=operation.get('expires_at'), message='World Labs is generating your world…')
-        except (HTTPException, KeyError, ValueError):
-            job.update(status='unknown', message='Submission could not be confirmed. Contact the project owner; do not start another charged job.')
-        await store.save(key, job)
-        return public(job)
-    finally:
-        await photo.close()
+            operation=await provider('POST','worlds:generate',{'display_name':'MemoVerse memory','model':claim['model'],'permission':{'public':False},'tags':['ku-inthon-demo',job['job_id']],
+                'world_prompt':{'type':'image','text_prompt':story,'image_prompt':{'source':'data_base64','data_base64':base64.b64encode(data).decode()}}})
+            operation_id=operation['operation_id']
+            if not isinstance(operation_id,str) or not re.fullmatch(r'[A-Za-z0-9-]{1,128}',operation_id):raise ValueError()
+            expires=operation.get('expires_at')
+            if expires:
+                try:
+                    if datetime.fromisoformat(expires.replace('Z','+00:00')).tzinfo is None:expires=None
+                except (TypeError,ValueError,AttributeError):expires=None
+            updates={'status':'pending','operation_id':operation_id,'expires_at':expires,'message':'World Labs is creating your world…'}
+        except (HTTPException,ValueError,KeyError,TypeError):
+            updates={'status':'unknown','message':'Submission needs owner review. Your allowance is reserved; this job will not be submitted again automatically.'}
+        return await accounts.rpc('mv_world_finish',{'p_user_id':user_id,'p_job_id':job['job_id'],'p_lease':None,'p_update':updates})
+    finally:await photo.close()
 
-@router.get('/api/world-jobs/{job_id}', dependencies=[Depends(authorize)])
-async def get_job(job_id: str, store=Depends(get_store)):
-    if len(job_id) != 64 or any(c not in '0123456789abcdef' for c in job_id): raise HTTPException(404, 'World job not found.')
-    job = await store.get(job_id)
-    if not job: raise HTTPException(404, 'World job not found.')
-    if job['status'] != 'pending' or time.time() - job.get('checked', 0) < 5: return public(job)
-    expires = job.get('expires_at')
+@router.get('/api/world-jobs/{job_id}')
+async def get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depends(get_accounts)):
+    from uuid import UUID
+    try:job_id=str(UUID(job_id))
+    except ValueError:raise HTTPException(404,'World not found for this account.') from None
+    lease=str(uuid4())
+    claim=await accounts.rpc('mv_world_poll',{'p_user_id':user_id,'p_job_id':job_id,'p_lease':lease})
+    job=claim['job']
+    if not claim['poll']:return job
+    updates={'status':'pending','message':'World Labs is creating your world…'}
     try:
-        expired = bool(expires and datetime.fromisoformat(expires.replace('Z', '+00:00')) <= datetime.now(timezone.utc))
-    except (ValueError, TypeError):
-        raise HTTPException(502, 'World Labs returned an invalid job expiry.') from None
-    if expired:
-        job.update(status='expired', message='World job expired. Contact the project owner before generating again.')
-    else:
-        try:
-            operation = await provider('GET', 'operations/' + job['operation_id'])
-            if operation.get('error'):
-                job.update(status='failed', message='World Labs generation failed. No automatic charged retry.')
+        expires=job.get('expires_at')
+        deadline=datetime.fromisoformat(expires.replace('Z','+00:00')) if expires else datetime.fromisoformat(job.get('created',datetime.now(timezone.utc).isoformat()).replace('Z','+00:00'))+timedelta(hours=1)
+        if deadline<=datetime.now(timezone.utc):
+            updates={'status':'expired','message':'This world job expired. No automatic charged retry.'}
+        else:
+            operation=await provider('GET','operations/'+claim['operation_id'])
+            if operation.get('error'):updates={'status':'failed','message':'World Labs could not finish this world. The reservation is retained for billing review.'}
             elif operation.get('done'):
-                world = operation.get('response') or {}
+                world=operation.get('response') or {}
                 if not world.get('assets'):
-                    world_id = world.get('world_id') or (operation.get('metadata') or {}).get('world_id')
-                    if not isinstance(world_id, str) or not world_id.replace('-', '').isalnum(): raise HTTPException(502, 'World result is unavailable.')
-                    world = await provider('GET', 'worlds/' + world_id)
-                    world = world.get('world', world)
-                job.update(status='succeeded', world=world_result(world), message='Your newly generated world is ready.')
-        except HTTPException as error:
-            if error.status_code == 410: job.update(status='expired', message='World job expired. No automatic charged retry.')
-            else: raise
-    job['checked'] = time.time()
-    await store.save(job_id, job)
-    return public(job)
+                    world_id=world.get('world_id') or (operation.get('metadata') or {}).get('world_id')
+                    if not isinstance(world_id,str) or not re.fullmatch(r'[A-Za-z0-9-]{1,128}',world_id):raise ValueError()
+                    world=await provider('GET','worlds/'+world_id);world=world.get('world',world)
+                assets=world_result(world);updates={'status':'succeeded','world':assets,'world_id':assets['id'],'message':'Your new world is ready.'}
+    except HTTPException as error:
+        updates={'status':'expired','message':'This world expired. No automatic charged retry.'} if error.status_code==410 else {'status':'pending','message':'Progress is temporarily unavailable. Resume this existing job shortly.'}
+    except (ValueError,TypeError,KeyError,AttributeError):updates={'status':'failed','message':'World Labs returned an invalid result. No automatic charged retry.'}
+    return await accounts.rpc('mv_world_finish',{'p_user_id':user_id,'p_job_id':job_id,'p_lease':lease,'p_update':updates})

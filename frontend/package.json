@@ -8,18 +8,22 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test src/integration/*.test.js src/ui/*.test.js"
+    "test": "node --test src/integration/*.test.js src/ui/*.test.js",
+    "test:browser": "playwright test",
+    "test:database": "node --test ../backend/tests/world_allowance.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "@sparkjsdev/spark": "^2.4.0",
+    "@supabase/supabase-js": "^2.118.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "three": "^0.187.0",
-    "@supabase/supabase-js": "^2.118.0"
+    "three": "^0.187.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.13",
+    "@playwright/test": "^1.64.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",

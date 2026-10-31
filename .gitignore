@@ -10,3 +10,6 @@ __pycache__/
 .vercel/
 frontend/dist/
 .vercel
+
+frontend/test-results/
+frontend/playwright-report/
