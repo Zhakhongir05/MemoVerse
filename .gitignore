@@ -9,3 +9,5 @@ ai-env.ps1
 !frontend/public/models/*.glb
 .DS_Store
 .venv/
+frontend/test-results/
+frontend/playwright-report/
