@@ -34,3 +34,15 @@ test('manual recovery refuses missing IDs and changed provider evidence atomical
   await assert.rejects(d.db.exec(sql),/Job state differs/);await d.db.exec('rollback');assert.deepEqual(await snapshot(d),before);
  }finally{await d.db.close();}
 });
+
+test('manual recovery refuses account overbooking and rolls back an insufficient budget',async()=>{
+ const d=await database();try{
+  await releasedJobs(d);await d.reserve(A,'c');await d.reserve(A,'d');const sql=await template();
+  let before=await snapshot(d);
+  await assert.rejects(d.db.exec(sql),/exceed the account limit/);await d.db.exec('rollback');assert.deepEqual(await snapshot(d),before);
+ }finally{await d.db.close();}
+ const d2=await database();try{
+  await releasedJobs(d2);await d2.db.exec('update world_generation_demo set credit_budget=1500');const before=await snapshot(d2);
+  await assert.rejects(d2.db.exec(await template()),error=>error.code==='23514');await d2.db.exec('rollback');assert.deepEqual(await snapshot(d2),before);
+ }finally{await d2.db.close();}
+});

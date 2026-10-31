@@ -41,6 +41,15 @@ begin
     raise exception 'Job state differs from reviewed snapshot; nothing changed';
   end if;
 
+  if exists(
+    select 1 from public.world_generation_jobs j where j.id=any(ids)
+    group by j.user_id
+    having count(*)+(select count(*) from public.world_generation_jobs a
+      where a.user_id=j.user_id and not a.allowance_released)>3
+  ) then
+    raise exception 'Restoration would exceed the account limit; nothing changed';
+  end if;
+
   update public.world_generation_jobs j
   set status='unknown',allowance_released=false,
       provider_diagnostics=coalesce(j.provider_diagnostics,'{}'::jsonb)
