@@ -1,7 +1,7 @@
 import {savedWorldId,rememberWorld,clearWorldLocation} from './savedWorldLocation.js'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { formatMemoryDate, journeySteps, listEntries, localDate, markEntryDeleted, MOODS, saveEntry, validateEntry } from './journalStore'
-import { importGuestEntries, syncJournal } from './journalCloud'
+import { syncJournal } from './journalCloud'
 import './Dashboard.css'
 import './Journal.css'
 import '../3d_world/scene.css'
@@ -323,14 +323,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
         setSelected(memory); setDemo(false); rememberWorld(memory.id)
         setGenerationRequest(crypto.randomUUID()); setView('prepare')
       }}
-      onDemo={() => { setSelected({ ...DEMO_MEMORY, date: localDate() }); setDemo(true); clearWorldLocation(); setSymbolic(false); setJourneyMode('free'); setActiveStep(0); setView('relive'); setNotice('') }}
-      guestImport={user && <button className="mj-back" disabled={syncing || saving} onClick={async () => {
-        if (!canLeave() || saveLock.current || syncLock.current) return
-        saveLock.current = true; setSaving(true)
-        try { const count = await importGuestEntries(owner); setNotice(count ? count + ' guest memories imported. Syncing to your account…' : 'No new guest memories to import.'); setRefresh(value => value + 1) }
-        catch (err) { setError(err.message || 'Guest import failed. Please retry.') }
-        finally { saveLock.current = false; setSaving(false) }
-      }}>Import this browser’s guest memories into my account ↗</button>} />}
+      onDemo={() => { setSelected({ ...DEMO_MEMORY, date: localDate() }); setDemo(true); clearWorldLocation(); setSymbolic(false); setJourneyMode('free'); setActiveStep(0); setView('relive'); setNotice('') }} />}
 
     {view === 'create' && <section className="mj-editor"><button className="mj-back" disabled={saving} onClick={() => navigate(selected && draft.id ? 'detail' : 'journal')}>← Back to {draft.id ? 'memory' : 'journal'}</button><div className="mj-page-heading"><div><p className="mj-eyebrow">MAKE ROOM FOR A MOMENT</p><h1 ref={heading} tabIndex={-1}>{draft.id ? 'Keep the' : 'A new'} <em>{draft.id ? 'details.' : 'memory.'}</em></h1><p>Save the story now. Step inside it whenever you’re ready.</p></div></div>
       {renderMemoryForm()}
