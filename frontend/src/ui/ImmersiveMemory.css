@@ -10,3 +10,8 @@
 @media(max-width:650px){.im-tool,.im-panel-open .im-tool{width:54px;min-height:52px}.im-tool small{display:block;font-size:10px}.im-listening{bottom:98px}.im-panel-open .im-listening{visibility:hidden}}
 
 .world-room-tools{position:absolute;right:24px;top:100px;width:42px;height:42px;border:1px solid #f5c6ad33;border-radius:50%;background:#241b1acc;color:#f8dfb2;font-size:23px;z-index:3}.world-opening{position:absolute;bottom:100px;left:24px;background:#241b1acc;padding:10px 16px;border-radius:14px;font-size:12px}.world-memory-card{position:absolute;right:24px;top:160px;width:min(300px,85vw);padding:22px;background:#241b1aee;backdrop-filter:blur(16px);border:1px solid #f5c6ad33;border-radius:18px;color:#fff5e8}.world-memory-card>button{float:right;background:none;border:0;color:inherit;font-size:24px}.world-memory-card img{width:100%;border-radius:8px}.world-memory-card p{font-size:13px;line-height:1.8}
+
+/* The sensory evidence card sits above the sense buttons and the floating
+   journal toolbar, and never grows past the top bar on short screens. */
+.im-renderer .sense-card{bottom:144px;max-height:calc(100% - 220px);overflow:auto}
+@media(max-width:650px){.im-renderer .sense-card{bottom:auto;top:64px}}

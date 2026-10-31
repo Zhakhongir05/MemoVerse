@@ -12,3 +12,11 @@ __pycache__/
 .vercel/
 frontend/test-results/
 frontend/playwright-report/
+
+# Local credential shims that export provider keys into a shell.
+ai-env.ps1
+ai-env.sh
+*-env.ps1
+
+# Local scratch screenshots (not app assets).
+/images/
