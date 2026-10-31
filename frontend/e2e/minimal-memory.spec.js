@@ -31,7 +31,7 @@ test('Plans restores free allowance and transparent 15000-won unlimited checkout
   await expect(page.getByRole('status').filter({ hasText: 'your Free plan is unchanged' })).toBeVisible()
   expect(requests).toEqual([])
 })
-test('heart favorites persist through reload, have their own tab, and can be removed', async ({ page }, testInfo) => {
+test('heart favorites persist through reload and can be removed with the tab hidden', async ({ page }, testInfo) => {
   await journal(page)
   await page.getByRole('button', { name: 'Create your first memory', exact: true }).click()
   await page.locator('#mj-title').fill('A favorite afternoon')
@@ -46,8 +46,8 @@ test('heart favorites persist through reload, have their own tab, and can be rem
   await page.reload()
   await page.getByRole('button', { name: 'Explore Memories', exact: true }).click()
   await page.getByRole('button', { name: 'Continue exploring without signing in' }).click()
-  await page.getByRole('button', { name: 'Favorites', exact: true }).click()
+  await expect(page.getByRole('navigation', { name: 'Journal navigation' }).getByRole('button', { name: 'Favorites', exact: true })).toHaveCount(0)
   await expect(page.locator('.jh-current h1')).toHaveText('A favorite afternoon')
   await page.getByRole('button', { name: 'Remove from favorites', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Your favorites will be here.', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Add to favorites', exact: true })).toHaveAttribute('aria-pressed', 'false')
 })
