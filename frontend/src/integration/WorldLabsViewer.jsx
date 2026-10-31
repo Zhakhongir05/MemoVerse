@@ -80,7 +80,9 @@ function settleInsideRoom(mesh,list){
  });
 }
 export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience }){
- // Only the saved sample room has a predefined furniture demo; generated worlds start empty.
+ // Only the saved sample room ships a predefined furniture demo. Journal worlds use
+ // their saved manifest when one exists, otherwise they propose furniture once from
+ // the bound photograph and cache the result on this device.
  const persistentExperience=typeof onSaveExperience==='function';
  const response = enhancementResponse ?? (!persistentExperience && world.id === existingWorld.id ? DEMO_ENHANCEMENT_RESPONSE : null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState({list:[],baseline:[],error:''});
@@ -121,8 +123,9 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
      setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
      setEnhancementSource('provided');setEnhancementStatus('Supplied placements · not newly AI-generated.');return;
     }
-    if(persistentExperience){setEnhancementStatus('No saved furniture yet. Reopening does not generate AI content.');return;}
-    if(!imageUrl){setEnhancementStatus('No photograph supplied; furniture stays empty.');return;}
+    // A journal world without saved placements may still propose furniture on first
+    // open; device cache keeps later opens from calling the provider again.
+    if(!imageUrl){setEnhancementStatus(persistentExperience?'No photograph is bound to this saved world; furniture stays empty.':'No photograph supplied; furniture stays empty.');return;}
     const result=await loadFurniture({imageUrl,story,memory:{id:savedMemoryId,owner:savedMemoryOwner},owner:enhancementOwner,worldId:world.id,signal:controller.signal});
     if(!active||controller.signal.aborted)return;
     let placements=result.list;
@@ -131,10 +134,15 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
      if(room)placements=settleInsideRoom(room,fitEnhancementsToBounds(placements,new Box3().setFromObject(room)));
      else needsFit.current=true;
     }
+    // Provider fallbacks are not saved: the next open retries instead of caching an empty room.
+    const fallback=result.payload?.source==='demo';
     setEnhancementState({list:placements,baseline:placements,error:result.warning});
-    setCacheInfo({identity:result.identity,payload:result.payload});
-    setEnhancementSource(result.source);
-    setEnhancementStatus(result.source==='saved'?'Saved placements restored from this device.':'AI furniture · approximate placements; review alignment.');
+    setCacheInfo(fallback?null:{identity:result.identity,payload:result.payload});
+    setEnhancementSource(fallback?'':result.source);
+    setEnhancementStatus(result.source==='saved'?'Saved placements restored from this device.'
+     :fallback?'The furniture provider is unavailable right now; no furniture was added.'
+     :!placements.length?'No furniture was proposed for this photograph; nothing was added.'
+     :'AI furniture · approximate placements; review alignment.');
    }catch(error){
     if(error.name==='AbortError'||!active)return;
     setEnhancementState({list:[],baseline:[],error:error.message||'Furniture could not be loaded. Please retry.'});
