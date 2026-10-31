@@ -84,3 +84,7 @@ This is a runtime/configuration readiness failure, not evidence of a failed buil
 - docs/CI_FAILURE_AUDIT.md — this evidence and owner handoff.
 
 No application features or teammate branches were changed. The exact shared Vercel build error and its fix remain blocked on authorized access to Johan's deployment logs.
+
+## First hosted CI run and follow-up
+
+Run 41216784794 passed backend/contract but failed two journalCloud media round-trip tests on Node 22: a cloned File lost its filename, producing `Check your memory details before syncing` and `undefined` instead of `voice.mp3`. The local passing runtime is Node 24.20.0. CI now uses Node 24 to match the verified runtime and its File structured-clone behavior; no browser persistence logic or assertions were weakened. Production build succeeded and its configuration endpoints returned enabled=true and limit=3.
