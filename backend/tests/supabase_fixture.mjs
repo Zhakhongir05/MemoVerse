@@ -11,6 +11,7 @@ export function sessionFor(id){
 const asset={id:'mock-world',splatUrl:'https://cdn.marble.worldlabs.ai/demo-generated.spz',fullResUrl:'https://cdn.marble.worldlabs.ai/demo-generated-full.spz',colliderUrl:'https://cdn.marble.worldlabs.ai/demo-collider.glb',thumbnailUrl:'https://cdn.marble.worldlabs.ai/demo-thumb.png'};
 async function serve(){
  const data=await database();for(const id of TEST_USERS)await data.db.query('insert into auth.users values($1)',[id]);
+ const stored=new Map();
  const server=http.createServer(async(req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','http://127.0.0.1:5206');res.setHeader('Access-Control-Allow-Headers','apikey,authorization,content-type,x-client-info');res.setHeader('Access-Control-Allow-Methods','GET,POST,OPTIONS');
   if(req.method==='OPTIONS'){res.writeHead(204).end();return;}
@@ -22,8 +23,35 @@ async function serve(){
     return reply(user?200:401,user?sessionFor(user).user:{error:'invalid test token'});
    }
    if(req.url.startsWith('/auth/v1/logout')){res.writeHead(204).end();return;}
-   let text='';for await(const chunk of req)text+=chunk;
+   const currentUser=TEST_USERS.find(id=>req.headers.authorization==='Bearer '+sessionFor(id).access_token);
+   const chunks=[];for await(const chunk of req)chunks.push(chunk);const bytes=Buffer.concat(chunks);
+   if(req.url.startsWith('/storage/v1/object/')){
+    const path=req.url.replace(/^\/storage\/v1\/object\/(authenticated\/)?memory-assets\//,'');
+    if(req.method==='POST'&&currentUser&&path.startsWith(currentUser+'/')){
+     let asset={bytes,type:req.headers['content-type']};
+     if(asset.type.startsWith('multipart/form-data')){
+      const form=await new Response(bytes,{headers:{'Content-Type':asset.type}}).formData();
+      const file=[...form.values()].find(value=>typeof value.arrayBuffer==='function');
+      asset={bytes:Buffer.from(await file.arrayBuffer()),type:file.type};
+     }
+     stored.set(path,asset);return reply(200,{Key:path});
+    }
+    if(req.method==='GET'&&(req.headers.apikey==='test-service-role'||currentUser&&path.startsWith(currentUser+'/'))&&stored.has(path)){
+     const asset=stored.get(path);res.writeHead(200,{'Content-Type':asset.type}).end(asset.bytes);return;
+    }
+    return reply(404,{error:'private photo missing'});
+   }
+   let text=bytes.toString();
    const body=JSON.parse(text||'{}');
+   if(req.url.startsWith('/rest/v1/journal_entries')&&currentUser){
+    if(req.method==='GET')return reply(200,(await data.db.query('select * from journal_entries where user_id=$1',[currentUser])).rows);
+    if(req.method==='POST'&&body.user_id===currentUser){
+     const keys=['id','user_id','title','memory_date','story','mood','photos','audio','scene','world','created_at','updated_at','deleted_at'];
+     const values=keys.map(k=>['photos','audio','scene','world'].includes(k)&&body[k]!=null?JSON.stringify(body[k]):body[k]??null);
+     const rows=await data.db.query(`insert into journal_entries(${keys.join(',')}) values(${keys.map((_,i)=>'$'+(i+1)).join(',')}) on conflict(id) do update set ${keys.filter(k=>k!=='id'&&k!=='user_id').map(k=>k+'=excluded.'+k).join(',')} returning *`,values);
+     return reply(200,rows.rows[0]);
+    }
+   }
    if(req.url==='/__test/seed-completed'){
     for(let i=0;i<3;i++){
      const claim=await data.rpc('mv_world_reserve',{p_user_id:body.user_id,p_submission:String(i).repeat(64),p_job_id:randomUUID()});

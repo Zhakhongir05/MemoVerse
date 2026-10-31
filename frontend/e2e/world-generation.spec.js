@@ -76,11 +76,6 @@ test('existing Google login stays available to signed-out visitors',async({page}
 });
 
 test('Relive My Memory directly generates the photo world and revisits it for free',async({page,request})=>{
- await page.route('http://127.0.0.1:8036/rest/v1/journal_entries**',async route=>{
-  if(route.request().method()==='GET')return route.fulfill({json:[]});
-  const row=route.request().postDataJSON();return route.fulfill({json:row});
- });
- await page.route('http://127.0.0.1:8036/storage/v1/object/**',route=>route.fulfill({json:{Key:'synthetic-private-photo'}}));
  await prepare(page,6);await page.getByRole('button',{name:'← Back to journal memory',exact:true}).click();
  const plan=page.getByRole('complementary',{name:'Your generation plan'});
  await expect(plan.getByText('Judging demo · Free plan')).toBeVisible();
@@ -97,6 +92,14 @@ test('Relive My Memory directly generates the photo world and revisits it for fr
  await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toBeVisible({timeout:30000});
  await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toBeVisible();
  await expect(page.locator('canvas')).toBeVisible();
+ await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
+ await expect(page.getByText(/Loaded 4 splats and collider/)).toHaveText(/Loaded 4 splats and collider/);
+ expect((await stats(request)).submitted).toBe(before+1);
+ await page.reload();await page.getByRole('button',{name:'Explore Memories',exact:true}).click();
+ await page.getByRole('button',{name:/Open A synthetic judging memory/}).click();
+ await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
+ await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
+ await expect(page.getByText(/Loaded 4 splats and collider/)).toHaveText(/Loaded 4 splats and collider/);
  expect((await stats(request)).submitted).toBe(before+1);
  await page.getByRole('button',{name:'← Back to memory',exact:true}).click();
  await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
@@ -148,8 +151,6 @@ test('a preview demo scene is explicitly labelled and never presented as real ge
 });
 
 async function openJournalGeneration(page,index,story){
- await page.route('http://127.0.0.1:8036/rest/v1/journal_entries**',route=>route.fulfill({json:route.request().method()==='GET'?[]:route.request().postDataJSON()}));
- await page.route('http://127.0.0.1:8036/storage/v1/object/**',route=>route.fulfill({json:{Key:'synthetic-photo'}}));
  await prepare(page,index);await page.getByRole('button',{name:'← Back to journal memory',exact:true}).click();
  await page.getByRole('button',{name:'＋ New Memory',exact:true}).click();
  await page.locator('#mj-title').fill('A Relive generation test');await page.locator('#mj-story').fill(story);

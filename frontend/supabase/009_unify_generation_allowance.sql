@@ -16,7 +16,7 @@ begin
      insert into public.world_generation_jobs(id,user_id,submission_hash,status,model,reserved_credits,message)
      values(gen_random_uuid(),a.user_id,md5('legacy-credit:'||a.user_id::text||':'||i)||md5('legacy-reservation:'||a.user_id::text||':'||i),
        'unknown','marble-1.1',1580,'Historical generation reservation retained for owner review. Open completed worlds from your journal.')
-     on conflict(user_id,submission_hash) do nothing;
+     on conflict do nothing;
      get diagnostics inserted=row_count;imported:=imported+inserted;
     end loop;
    end if;

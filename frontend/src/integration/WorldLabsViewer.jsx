@@ -15,7 +15,7 @@ function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quali
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
  useEffect(()=>{
   let active=true, mesh=null;
-  onStatus('Loading saved world detail…');
+  onStatus('Loading world detail…');
   const spark=new SparkRenderer({renderer:gl,preBlurAmount:0,blurAmount:.3}); scene.add(spark);
   const splat=new SplatMesh({url:quality==='full'?world.fullResUrl:world.splatUrl,lod:false});
   // Marble raw OpenCV splats -> Three.js. No metric scale is supplied for this draft.
@@ -30,7 +30,7 @@ function Assets({world, wireframe, placing, onPlace, onStatus, onCollider, quali
    const bounds=new Box3().setFromObject(mesh);
    onStatus(`Loaded ${splat.numSplats.toLocaleString()} splats and collider. Asset units; metric scale unavailable.`);
    console.info('World Labs assets loaded', {splats:splat.numSplats,colliderBounds:bounds.min.toArray().concat(bounds.max.toArray())});
-  }).catch(()=>{if(active)onStatus('World assets failed to load. Switch to the primitive room to continue.');});
+  }).catch(()=>{if(active)onStatus('World assets failed to load. Reopen this saved memory to retry; no new generation is needed.');});
   return ()=>{active=false;scene.remove(spark,splat);splat.dispose();spark.dispose();if(mesh){scene.remove(mesh);mesh.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});}collider.current=null;onCollider?.(null);};
  },[gl,scene,onStatus,onCollider,quality,world]);
  useEffect(()=>{collider.current?.traverse(o=>{if(o.isMesh)o.material.opacity=wireframe?.5:0;});});
@@ -212,7 +212,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   for(const kind of ['photo','audio'])if(selectedAnchor?.[kind]){URL.revokeObjectURL(selectedAnchor[kind]);urls.current.delete(selectedAnchor[kind]);}
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
- return <Boundary><div className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
+ return <Boundary><div data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
@@ -221,6 +221,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
    <CameraJourney controls={controls} journey={journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
   </Canvas>
+  {embedded&&!status.startsWith('Loaded')&&<p role={status.includes('failed')?'alert':'status'} style={{position:'absolute',bottom:'1rem',left:'1rem',zIndex:3,background:'#17171bcc',padding:'.6rem 1rem',borderRadius:'.5rem'}}>{status}</p>}
   <div className="atmosphere-wash" aria-hidden="true"/>
   <div className="sense-controls" aria-label="SenseShift atmosphere">
    {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>onMoodChange?onMoodChange(value):setMoodSetting(value)}>{value}</button>)}
