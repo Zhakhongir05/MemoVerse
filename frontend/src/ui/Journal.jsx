@@ -6,7 +6,6 @@ import './Dashboard.css'
 import './Journal.css'
 import MemoryTimeline from './MemoryTimeline'
 import ImmersiveMemory from './ImmersiveMemory'
-import MemoryPodcast from './MemoryPodcast.jsx'
 import SpeechInput from './SpeechInput.jsx'
 import JournalHome from './JournalHome.jsx'
 import RelivePreparation from './RelivePreparation'
@@ -169,6 +168,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   }
   async function submit(event) {
     event.preventDefault()
+    const createWorld = event.nativeEvent.submitter?.value === 'create-world'
     if (saveLock.current || syncLock.current) return
     const errors = validateEntry(draft)
     setFieldErrors(errors); setError('')
@@ -191,7 +191,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       }
       if (!alive.current) return
       setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt)))
-      setSelected(saved); setActivePhoto(0); setDirty(false); if (view === 'relive') setEditorSavedToken(value => value + 1); else setView('detail'); setNotice(saved.syncState === 'synced' ? 'Your memory has been saved.' : user ? 'Saved on this device. Cloud sync is pending; use Retry sync.' : 'Saved on this device. Sign in to sync to Supabase.')
+      setSelected(saved); setActivePhoto(0); setDirty(false); if(createWorld && saved.syncState==='synced'){setDemo(false);rememberWorld(saved.id);setGenerationRequest(crypto.randomUUID());setView('prepare')} else if (view === 'relive') setEditorSavedToken(value => value + 1); else setView('detail'); setNotice(saved.syncState === 'synced' ? 'Your memory has been saved.' : user ? 'Saved on this device. Cloud sync is pending; use Retry sync.' : 'Saved on this device. Sign in to sync to Supabase.')
     } catch (err) {
       if (alive.current) setError(err.name === 'QuotaExceededError' ? 'Your browser storage is full. Use smaller photos, then save again. Your draft is still here.' : err.message || 'Could not save. Your draft is still here; please try again.')
     } finally { saveLock.current = false; if (alive.current) setSaving(false) }
@@ -225,7 +225,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
         <div className="mj-editor-side"><div className="mj-glass mj-photo-panel"><h2>Bring it into focus</h2><p>Choose one JPG, PNG, or WebP photo · Up to 10 MB.</p><PhotoPlanInfo user={user} /><button className="mj-add-photos" type="button" onClick={() => photoInput.current?.click()}>{draft.photos.length ? 'Replace source photo' : '＋ Add source photo'}</button><input id="mj-photos" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { choosePhotos(event.target.files, draft.photos.length ? 0 : null); event.target.value = '' }} aria-label="Choose one source photograph" aria-describedby="mj-photo-error" />
           <div className="mj-photo-edit-grid">{draft.photos.map((file, index) => <div key={`${index}-${file.name}`}><Photo file={file} alt={`Memory photograph ${index + 1}`} /><div><label className="mj-file-replace">Replace<input type="file" accept="image/jpeg,image/png,image/webp" aria-label={`Replace photograph ${index + 1}`} onChange={event => { choosePhotos(event.target.files, index); event.target.value = '' }} /></label><button type="button" aria-label={`Remove photograph ${index + 1}`} onClick={() => { setInputError(''); change('photos', draft.photos.filter((_, photoIndex) => index !== photoIndex)) }}>Remove</button></div></div>)}</div>
           <p id="mj-photo-error" className="mj-field-error" role="alert">{inputError || fieldErrors.photos}</p></div>
-          <div className="mj-save-area"><button className="mj-primary" type="submit">{saving ? 'Saving your memory…' : 'Save journal entry ↗'}</button><p>Keep this moment. Come back whenever you like.</p></div>
+          <div className="mj-save-area">{!draft.id && user && draft.photos.length>0 && <><button className="mj-primary" type="submit" value="create-world">{saving ? 'Preparing…' : 'Create world + podcast'}</button><p>Uses 1 of your 3 world allowances. AI narration included.</p></>}<button className="mj-secondary" type="submit">{saving ? 'Saving your memory…' : 'Save journal entry ↗'}</button><p>Keep this moment. Come back whenever you like.</p></div>
         </div>
       </fieldset></form>)
   }
@@ -252,7 +252,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     </header>
     {error && <div className="mj-error-banner" role="alert">{error}{['journal', 'timeline', 'creations'].includes(view) ? <button onClick={() => setRefresh(value => value + 1)}>Retry loading</button> : null}</div>}
     {notice && <p className="mj-notice" role="status">{notice}</p>}
-    {user && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
+    {user && (syncing || syncError || entries.some(entry => entry.syncState !== 'synced')) && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
 
     {['journal','timeline','creations'].includes(view) && <WorldAllowance user={user} />}
     {view === 'timeline' && <MemoryTimeline owner={owner} entries={entries} loading={loading} onOpen={openMemory} onNew={createMemory} Photo={Photo} SceneRenderer={SceneRenderer} />}
@@ -282,14 +282,14 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       {renderMemoryForm()}
     </section>}
 
-    {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><MemoryPodcast key={selected.id} memory={selected} user={user} /><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
+    {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
         <div className="mj-detail-media">{selected.photos.length ? <><Photo file={selected.photos[activePhoto]} alt={`${selected.title}, photograph ${activePhoto + 1}`} className="mj-detail-cover" /><div className="mj-thumbnails">{selected.photos.map((photo, index) => <button key={index} aria-label={`View photograph ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)}><Photo file={photo} alt="" /></button>)}</div></> : <div className="mj-detail-no-photo" aria-hidden="true">◈<span>A moment held in words</span></div>}
-          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
+          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Your photograph becomes a 3D world; your story becomes its podcast. Uses 1 world allowance.'}</p><button className="mj-primary" onClick={() => {
             setDemo(false)
             // Always resolve the authoritative journal binding and fresh private assets first.
             if(!user){onSignIn?.();return}
             rememberWorld(selected.id);setGenerationRequest(crypto.randomUUID());setView('prepare')
-          }}>{selected.world?.source==='worldlabs' ? 'Enter Memory World ✧' : 'Relive in 3D ✧'}</button></div>
+          }}>{selected.world?.source==='worldlabs' ? 'Enter Memory World ✧' : 'Create world + podcast'}</button></div>
         </div></div></section>}
 
     {view === 'prepare' && selected && <RelivePreparation generationRequest={generationRequest} key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => {clearWorldLocation();setView('detail')}} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {

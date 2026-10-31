@@ -17,33 +17,32 @@ async function save(page,title){
 test('first Relive submits once, renders its world and reopens it after reload for free',async({page,request})=>{
  await setup(page,0);const before=(await stats(request)).submitted;
  await save(page,'Focused production world test');expect((await stats(request)).submitted).toBe(before);
- await page.getByRole('button',{name:'Relive in 3D ✧',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Enter Memory World',exact:true})).toBeVisible({timeout:30000});
+ await page.getByRole('button',{name:'Create world + podcast',exact:true}).click();
+ await expect(page.locator('[data-world-source="generated"]')).toBeVisible({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
- await page.getByRole('button',{name:'Explore Freely ↗',exact:true}).click();
  await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
- await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
+ await expect(page.getByText(/Loaded 4 splats and collider/)).toBeAttached({timeout:30000});
  const worldId=await page.locator('[data-world-id]').getAttribute('data-world-id');
  const pollsBefore=(await stats(request)).polls;
  await page.reload();
  await expect(page.locator('[data-world-id]')).toHaveAttribute('data-world-id',worldId);
- await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
+ await expect(page.getByText(/Loaded 4 splats and collider/)).toBeAttached({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
  expect((await stats(request)).polls).toEqual(pollsBefore);
 });
 test('refresh resumes a pending journal job instead of resubmitting',async({page,request})=>{
  await setup(page,1);await save(page,'Pending world recovery');const before=(await stats(request)).submitted;
- await page.getByRole('button',{name:'Relive in 3D ✧',exact:true}).click();
+ await page.getByRole('button',{name:'Create world + podcast',exact:true}).click();
  await expect.poll(async()=>(await stats(request)).submitted).toBe(before+1);
  await page.reload();
- await expect(page.getByRole('heading',{name:'Enter Memory World',exact:true})).toBeVisible({timeout:30000});
+ await expect(page.locator('[data-world-source="generated"]')).toBeVisible({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
 });
 test('reservation failures display the precise backend error without submission or sample fallback',async({page,request})=>{
  await setup(page,2);await save(page,'Specific reservation error');const before=(await stats(request)).submitted;
  const message='Generation is blocked by earlier submissions awaiting owner review. No new World Labs request was sent; your allowance is unchanged.';
  await page.route('**/api/journal/*/world',route=>route.request().method()==='POST'?route.fulfill({status:503,json:{detail:message}}):route.continue());
- await page.getByRole('button',{name:'Relive in 3D ✧',exact:true}).click();
+ await page.getByRole('button',{name:'Create world + podcast',exact:true}).click();
  await expect(page.getByRole('alert').filter({hasText:message})).toBeVisible();
  await expect(page.getByText('Uploading your photograph securely…',{exact:true})).toHaveCount(0);
  await expect(page.locator('canvas')).toHaveCount(0);expect((await stats(request)).submitted).toBe(before);

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { formatMemoryDate } from './journalStore'
 import './ImmersiveMemory.css'
+import { preparePodcast } from '../integration/preparePodcast.js'
 import MemoryPodcast from './MemoryPodcast.jsx'
 import { useMemoryPhoto } from './useMemoryPhoto.js'
 
-export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, JourneyController, steps, activeStep, onStepChange, initialMode, editor, onBeginEdit, onCancelEdit, onExit, onOpenStudio, Photo, symbolic = false, demo = false, savedToken, error, syncError, saving }) {
+export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, JourneyController, steps, activeStep, onStepChange, initialMode, editor, onBeginEdit, onCancelEdit, onExit, onOpenStudio, symbolic = false, demo = false, savedToken, error, saving }) {
   const { url: imageUrl, error: photoError } = useMemoryPhoto(memory)
   const [mode, setMode] = useState('explore')
   const [panel, setPanel] = useState(initialMode === 'guided' ? 'journey' : null)
@@ -17,8 +18,11 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   const panelHeading = useRef(null)
   const opener = useRef(null)
   const previousSavedToken = useRef(savedToken)
-  const step = steps[activeStep]
   const hasWorld = !!(!symbolic && memory.world && WorldViewer)
+
+  useEffect(() => {
+    if (hasWorld) void preparePodcast(memory.id).catch(() => {})
+  }, [hasWorld, memory.id])
 
   useEffect(() => {
     if (panel) panelHeading.current?.focus()
@@ -52,18 +56,13 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
     else setMode('explore')
     setPanel(next)
   }
-  function addMemory(event) {
-    if (saving || (panel === 'edit' && !onCancelEdit())) return
-    opener.current = event.currentTarget
-    onBeginEdit(true); setMode('edit'); setPanel('edit')
-  }
   const renderProps = {
-    scene: memory.scene, mood, memory, mode, imageUrl, enhancementOwner: memory.owner,
+    minimal: mode !== 'edit', scene: memory.scene, mood, memory, mode, imageUrl, enhancementOwner: memory.owner,
     // Relive keeps the World Labs room, as before the integration branch.
     worldMode: symbolic ? 'sample' : 'saved',
-    activeStep: panel === 'journey' ? activeStep : null,
+    activeStep: null, // The podcast cue drives the camera; do not display a second legacy tour.
     showAnchors: false, showMarkers: false,
-    cameraResetKey: cameraReset, podcastCue: panel === 'journey' ? podcastCue : null,
+    cameraResetKey: cameraReset, podcastCue,
   }
 
   useEffect(() => {
@@ -87,22 +86,21 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">
         <Tool label="SenseShift" icon="◐" active={panel === 'mood'} onClick={event => openPanel('mood', event)} disabled={saving} />
-        <Tool label="Guided tour" icon="✧" active={panel === 'journey'} onClick={event => openPanel('journey', event)} disabled={saving} />
+        <Tool label="Listen to memory" icon={<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 14v-3a8 8 0 0 1 16 0v3M4 13h4v8H6a2 2 0 0 1-2-2zm16 0h-4v8h2a2 2 0 0 0 2-2z" /></svg>} active={panel === 'journey'} onClick={event => openPanel('journey', event)} disabled={saving} />
         <Tool label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} icon="⛶" active={fullscreen} onClick={toggleFullscreen} />
         <Tool label="Reset camera" icon="↺" onClick={() => setCameraReset(value => value + 1)} />
         <span className="im-toolbar-divider" />
         <Tool label={mode === 'edit' ? 'Explore mode' : 'Edit memory'} icon={mode === 'edit' ? '◎' : '✎'} active={mode === 'edit'} onClick={event => mode === 'edit' ? closePanel() : openPanel('edit', event)} disabled={saving} />
-        <Tool label="Add Memory" icon="＋" onClick={addMemory} disabled={saving} />
+
         <Tool label="Memory info" icon="ⓘ" active={panel === 'info'} onClick={event => openPanel('info', event)} disabled={saving} />
       </div>
     </div>
     <aside className={`im-panel ${panel ? 'im-panel-visible' : ''}`} aria-label="Memory controls panel" aria-hidden={!panel} inert={!panel}>
-      {panel && <div className="im-panel-content"><header><div><p className="mj-eyebrow">{panel === 'edit' ? 'MAKE THE MOMENT YOURS' : 'A LITTLE CLOSER TO THEN'}</p><h2 ref={panelHeading} tabIndex={-1}>{({ mood: 'SenseShift', journey: 'A guided journey', edit: 'Your memory', info: 'About this memory' })[panel]}</h2></div><button className="im-close" aria-label="Close memory panel" disabled={saving} onClick={closePanel}>×</button></header>
+      {panel && <div className="im-panel-content"><header><div><p className="mj-eyebrow">{panel === 'edit' ? 'MAKE THE MOMENT YOURS' : 'A LITTLE CLOSER TO THEN'}</p><h2 ref={panelHeading} tabIndex={-1}>{({ mood: 'SenseShift', journey: 'Your podcast', edit: 'Your memory', info: 'About this memory' })[panel]}</h2></div><button className="im-close" aria-label="Close memory panel" disabled={saving} onClick={closePanel}>×</button></header>
         {panel === 'mood' && <><p className="im-panel-lede">Set the atmosphere for this visit.</p><fieldset className="im-mood-options"><legend className="mj-sr-only">Scene atmosphere</legend>{['Nostalgic', 'Joyful', 'Melancholic'].map(value => <label key={value} className={mood === value ? 'im-chosen' : ''}><input type="radio" name="immersive-mood" checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</fieldset></>}
-        {panel === 'journey' && <MemoryPodcast onPlaybackChange={setPodcastCue} memory={memory} user={memory.owner && memory.owner!=='local-device' ? {id:memory.owner} : null} />}
-        {panel === 'journey' && step && <><p className="im-step-count">MOMENT {activeStep + 1} OF {steps.length}</p><h3>{step.title}</h3>{step.photoIndex !== null && <Photo file={memory.photos[step.photoIndex]} alt={`Memory photograph ${step.photoIndex + 1}`} className="im-journey-photo" />}<p className="im-story">{step.text}</p><div className="im-journey-actions"><button className="mj-secondary" disabled={activeStep === 0} onClick={() => onStepChange(activeStep - 1)}>← Previous</button><button className="mj-primary" onClick={() => activeStep + 1 === steps.length ? closePanel() : onStepChange(activeStep + 1)}>{activeStep + 1 === steps.length ? 'Explore freely' : 'Next moment →'}</button></div></>}
+        {panel === 'journey' && <MemoryPodcast autoPlay onPlaybackChange={setPodcastCue} memory={memory} user={memory.owner && memory.owner!=='local-device' ? {id:memory.owner} : null} />}
         {panel === 'edit' && <>{error && <p className="mj-field-error" role="alert">Your changes could not be saved. Please try again.</p>}{editor}</>}
-        {panel === 'info' && <><p className="im-panel-lede">{memory.title}</p><p className="im-story">{memory.story}</p><p className="im-panel-note">{formatMemoryDate(memory.date)} · {memory.mood}</p>{onOpenStudio && <button className="mj-secondary" disabled={saving} onClick={onOpenStudio}>Open Memory Studio</button>}<details className="im-debug"><summary>Technical details</summary><p>Viewer: {hasWorld ? 'World Labs integration' : 'Predefined R3F demo'}</p><p>{JourneyController ? 'Journey controller supplied.' : 'Guided reading only. AI narration and synchronized camera anchors await integration.'}</p><p>Marker overlays are disabled for exploration.</p>{syncError && <p>Sync: {syncError}</p>}{error && <p>Save: {error}</p>}</details></>}
+        {panel === 'info' && <><p className="im-panel-lede">{memory.title}</p><p className="im-story">{memory.story}</p><p className="im-panel-note">{formatMemoryDate(memory.date)} · {memory.mood}</p>{onOpenStudio && <button className="mj-secondary" disabled={saving} onClick={onOpenStudio}>Open Memory Studio</button>}</>}
       </div>}
     </aside></div>
     {panel === 'journey' && JourneyController && <JourneyController memory={memory} steps={steps} activeStep={activeStep} onStepChange={onStepChange} />}
@@ -110,5 +108,5 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
 }
 
 function Tool({ label, icon, active, onClick, disabled }) {
-  return <button className="im-tool" title={label} aria-label={label} aria-pressed={active} onClick={onClick} disabled={disabled}><span aria-hidden="true">{icon}</span><small>{label}</small></button>
+  return <button className="im-tool" title={label} aria-label={label} aria-pressed={active} onClick={onClick} disabled={disabled}><span aria-hidden="true">{icon}</span></button>
 }
