@@ -1,0 +1,14 @@
+{
+  "sourceCommit": "65a5e8036238933e1426f290c56d25da4acfb12c",
+  "assets": {
+    "bed-modern-01": "bed",
+    "desk-modern-01": "desk",
+    "chair-modern-01": "chair",
+    "lamp-warm-01": "lamp",
+    "bookshelf-oak-01": "bookshelf",
+    "armchair-ochre-01": "armchair",
+    "pendant-warm-01": "pendant",
+    "basket-woven-01": "basket",
+    "rug-feather-01": "rug"
+  }
+}
