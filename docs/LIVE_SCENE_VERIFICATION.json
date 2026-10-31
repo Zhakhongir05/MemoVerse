@@ -1,0 +1,17 @@
+{
+  "http_status": 504,
+  "response": {
+    "detail": [
+      {
+        "loc": [
+          "provider"
+        ],
+        "type": "provider_timeout",
+        "msg": "AI provider timed out. Please retry."
+      }
+    ]
+  },
+  "elapsed_seconds": 27.27,
+  "test_photo": "img1.jpg",
+  "request_count": 1
+}

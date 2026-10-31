@@ -1,0 +1,15 @@
+import { lazy, Suspense, useState } from 'react';
+import MemoryWorld from './MemoryWorld.jsx';
+import './connectedWorld.css';
+const WorldLabsViewer=lazy(()=>import('./WorldLabsViewer.jsx'));
+export default function ConnectedWorld({scene,mood='Nostalgic',worldMode='symbolic',generatedWorld,onMoodChange}){
+ const [selected,setSelected]=useState(null);
+ const object=scene?.objects.find(o=>o.id===selected);
+ const displayScene=scene?{...scene,mood:mood.toLowerCase()}:null;
+ return <div className="mv-connected-world">
+  {worldMode!=='symbolic'?<Suspense fallback={<p role="status">Loading saved World Labs sample…</p>}><WorldLabsViewer key={worldMode==='generated'?generatedWorld?.id:'sample'} world={worldMode==='generated'?generatedWorld:undefined} mood={mood.toLowerCase()} onMoodChange={onMoodChange}/></Suspense>:<>
+   <MemoryWorld scene={displayScene} onSelect={setSelected}/>
+   {scene&&<aside className="mv-object-journal" aria-label="Scene memories"><p>Explore your memory objects</p><div>{scene.objects.map(o=><button key={o.id} aria-pressed={selected===o.id} onClick={()=>setSelected(o.id)}>{o.type}</button>)}</div>{object&&<section aria-label="Selected object memory"><strong>{object.type}</strong><p>{object.memory||'No story was provided for this object.'}</p></section>}</aside>}
+  </>}
+ </div>;
+}

@@ -7,15 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test src/integration/*.test.js src/ui/*.test.js"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
-    "@supabase/supabase-js": "^2.118.0",
+    "@sparkjsdev/spark": "^2.4.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "@supabase/supabase-js": "^2.118.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",
