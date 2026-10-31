@@ -174,7 +174,8 @@ router=APIRouter()
 FURNITURE_VISION_PROMPT = (VISION_PROMPT +
     ' For every visible furniture item or fixed room fixture, also report photoPosition as [x, y],'
     ' where x runs from the left edge (0) to the right edge (1) and y from the top edge (0)'
-    ' to the bottom edge (1), measured at the centre of the object. Approximate values are expected.')
+    ' to the bottom edge (1), measured at the centre of the object. Approximate values are expected.'
+    ' Report at most 20 objects, each described in fewer than 140 characters.')
 
 
 def completion_payload(result):
@@ -255,7 +256,6 @@ def parse_photo_analysis(result,limit=20,stats=None):
     if stats is not None:
         stats['vision_raw']=len(raw) if isinstance(raw,list) else 0
         stats['vision_objects']=len(objects)
-        stats['vision_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
     colors=[c.strip() for c in data.get('colors') if isinstance(c,str) and c.strip() and len(c.strip())<=80] if isinstance(data.get('colors'),list) else []
     try:
         return PhotoAnalysis(objects=objects[:limit],
@@ -275,9 +275,7 @@ def parse_plan(result,limit=20,stats=None):
     data=completion_payload(result)
     raw=data.get('enhancements')
     if not isinstance(raw,list):raise PipelineFailure('invalid_model_output')
-    if stats is not None:
-        stats['plan_raw']=len(raw)
-        stats['plan_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
+    if stats is not None:stats['plan_raw']=len(raw)
     kept={}
     for item in raw:
         try:placement=Enhancement.model_validate(canonical_placement(item))
@@ -307,11 +305,18 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
     if not image:raise HTTPException(422,'A photograph is required for AI proposals')
     stats={}
     try:
-        async def live():
+        async def observe(tokens):
             vision=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':FURNITURE_VISION_PROMPT},{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:'+image+';base64,'+base64.b64encode(data).decode(),'detail':'low'}}]}],
-                response_format={'type':'json_object'},max_completion_tokens=1800,temperature=0,timeout=20)
-            observations=parse_photo_analysis(vision,stats=stats)
+                response_format={'type':'json_object'},max_completion_tokens=tokens,temperature=0,timeout=20)
+            return parse_photo_analysis(vision,stats=stats)
+
+        async def live():
+            try: observations=await observe(2600)
+            except PipelineFailure:
+                # A dense photograph can exhaust the token budget mid-JSON; one
+                # longer retry is cheaper than losing the photograph entirely.
+                observations=await observe(4000)
             prompt=('Select visible furniture and map each item to the closest asset in this exact assetId:type catalog: '+json.dumps(CATALOG)+
                 '. Return JSON matching '+json.dumps(Plan.model_json_schema())+
                 '. Photo relationships are not metric 3D evidence. Propose approximate Y-up render-frame transforms only, '
