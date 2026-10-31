@@ -36,7 +36,7 @@ class BodyLimitMiddleware:
     def __init__(self, app):
         self.app = app
     async def __call__(self, scope, receive, send):
-        if scope['type'] != 'http' or scope.get('path') not in ('/api/generate-scene', '/api/world-jobs', '/api/generate-enhancements'):
+        if scope['type'] != 'http' or scope.get('path') not in ('/api/generate-scene', '/api/world-jobs', '/api/generate-enhancements', '/api/sensory-cues'):
             return await self.app(scope, receive, send)
         limit = MAX_PHOTO_BYTES + 64 * 1024
         body = bytearray()
@@ -163,6 +163,9 @@ def generation_status(request: Request):
 
 from .enhancements import router as enhancement_router
 app.include_router(enhancement_router)
+
+from .sensory import router as sensory_router
+app.include_router(sensory_router)
 
 from .journal_worlds import router as journal_world_router
 app.include_router(journal_world_router)
