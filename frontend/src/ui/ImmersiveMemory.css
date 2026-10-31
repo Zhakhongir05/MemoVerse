@@ -3,3 +3,7 @@
 @media(max-width:1000px){.im-panel.im-panel-visible,.im-panel-content{width:340px}.im-panel-content{padding:22px 18px}.im-panel-open .im-tool{width:43px}.im-panel-open .im-tool small{display:none}.im-topbar{left:16px;right:16px;gap:12px}.im-mode-label{display:none}.im-memory-name{max-width:55%}.im-toolbar{bottom:18px}}
 @media(max-width:650px){.im-body{position:relative}.im-panel{position:absolute;z-index:4;top:0;bottom:0;right:0;box-shadow:-15px 0 50px #0005}.im-panel.im-panel-visible,.im-panel-content{width:min(360px,92vw)}.im-toolbar{gap:1px;padding:6px;border-radius:14px;bottom:max(16px,env(safe-area-inset-bottom))}.im-tool,.im-panel-open .im-tool{width:39px;min-height:43px;padding:4px 2px}.im-tool>span{font-size:21px}.im-tool small{display:none}.im-toolbar-divider{margin:0 1px;height:25px}.im-topbar{top:16px}.im-back{font-size:10px!important;padding:7px 11px}.mj-app .im-memory-name h1{font-size:16px}.im-memory-name>span{font-size:7px}.im-panel-open .im-toolbar{visibility:hidden}}
 @media(prefers-reduced-motion:reduce){.im-panel{transition:none}}
+
+.im-toolbar{flex-wrap:wrap;justify-content:center;width:max-content;box-sizing:border-box}
+.im-topbar{z-index:2;flex-wrap:wrap}.im-toolbar{z-index:2}.im-back{min-height:44px;flex-shrink:0}
+@media(max-width:650px){.im-panel-open .im-topbar{visibility:hidden}}

@@ -2,9 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { appendDictation, readSpeechResults } from './dictationText.js'
 import './SpeechInput.css'
 
-export default function SpeechInput({ value, onChange, disabled }) {
+export default function SpeechInput(props) {
+  const [open, setOpen] = useState(false)
+  return <section className="mj-speech-entry"><button type="button" className="mj-secondary" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? 'Close voice input' : 'Speak your memory'}</button>{open && <Dictation {...props} />}</section>
+}
+
+function Dictation({ value, onChange, disabled }) {
   const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition
   const recognition = useRef(null)
+  const permissionTimer = useRef(null)
+  const stopTimer = useRef(null)
   const [phase, setPhase] = useState('idle')
   const [language, setLanguage] = useState('en-US')
   const [transcript, setTranscript] = useState('')
@@ -22,21 +29,39 @@ export default function SpeechInput({ value, onChange, disabled }) {
       window.removeEventListener('pagehide', stop)
       const current = recognition.current
       recognition.current = null
+      clearTimeout(permissionTimer.current)
+      clearTimeout(stopTimer.current)
       if (current) { current.onresult = current.onerror = current.onend = current.onstart = null; current.abort() }
     }
   }, [])
-  useEffect(() => { if (disabled) recognition.current?.stop() }, [disabled])
+  useEffect(() => {
+    if (disabled && recognition.current) {
+      const current = recognition.current
+      current.onend?.(); current.abort()
+    }
+  }, [disabled])
 
   function start() {
     if (recognition.current || !Recognition) return
+    if (!window.isSecureContext) { setError('Microphone input requires HTTPS or localhost. Open the secure website and try again.'); return }
+    if (document.permissionsPolicy?.allowsFeature('microphone') === false) { setError('Microphone access is blocked in this embedded page. Open MemoVerse directly in its own browser tab to use voice input.'); return }
     setError(''); setInterim('')
-    const current = new Recognition()
+    let current
+    try { current = new Recognition() }
+    catch { setError('Your browser could not open speech recognition. You can still type your story.'); return }
     recognition.current = current
     current.lang = language; current.continuous = true; current.interimResults = true
     // Each session reports a cumulative list. Replace its preview rather than
     // appending repeated interim/final events into the actual journal story.
     const previous = transcript
-    current.onstart = () => setPhase('listening')
+    function finish() {
+      if (recognition.current !== current) return
+      recognition.current = null
+      clearTimeout(permissionTimer.current); clearTimeout(stopTimer.current)
+      current.onresult = current.onerror = current.onend = current.onstart = null
+      setPhase('idle'); setInterim('')
+    }
+    current.onstart = () => { clearTimeout(permissionTimer.current); setPhase('listening') }
     current.onresult = event => {
       const result = readSpeechResults(event.results)
       setTranscript(appendDictation(previous, result.final))
@@ -52,15 +77,39 @@ export default function SpeechInput({ value, onChange, disabled }) {
         'language-not-supported': 'This recognition service does not support that language.',
       }
       if (event.error !== 'aborted') setError(messages[event.error] || 'Dictation stopped. You can keep the words already captured and try again.')
+      finish(); current.abort()
     }
-    current.onend = () => { recognition.current = null; setPhase('idle'); setInterim('') }
+    current.onend = finish
     setPhase('starting')
-    try { current.start() }
-    catch { recognition.current = null; setPhase('idle'); setError('Dictation could not start. Use HTTPS or localhost and allow microphone access.') }
+    try {
+      permissionTimer.current = setTimeout(() => {
+        if (recognition.current !== current) return
+        current.onresult = current.onerror = current.onend = current.onstart = null
+        current.abort(); recognition.current = null; setPhase('idle')
+        setError('Microphone access did not start. Check this site’s microphone permission and try again.')
+      }, 15000)
+      current.start()
+    }
+    catch { finish(); current.abort(); setError('Dictation could not start. Use HTTPS or localhost and allow microphone access.') }
   }
   function stop() {
+    if (phase === 'starting') {
+      const current = recognition.current
+      recognition.current = null; clearTimeout(permissionTimer.current)
+      if (current) { current.onresult = current.onerror = current.onend = current.onstart = null; current.abort() }
+      setPhase('idle'); return
+    }
     setPhase('stopping')
-    try { recognition.current?.stop() }
+    try {
+      const current = recognition.current
+      if (!current) { setPhase('idle'); return }
+      stopTimer.current = setTimeout(() => {
+        if (recognition.current !== current) return
+        current.onend?.(); current.abort()
+        setError('Dictation has stopped. You can review the words already captured or start again.')
+      }, 5000)
+      current.stop()
+    }
     catch { recognition.current = null; setPhase('idle') }
   }
   function insert() {

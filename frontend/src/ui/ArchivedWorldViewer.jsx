@@ -34,8 +34,8 @@ export default function ArchivedWorldViewer({ memory, world, ...props }) {
   }
   return <div className="mv-clean-viewer">
     {error && <p role="alert">{error}</p>}
-    {!resolved ? <p role="status">Opening your saved world…</p> : <Suspense fallback={<p role="status">Opening viewer…</p>}><Viewer {...props} world={resolved} enhancementResponse={savedWorld.enhancementResponse} onEnhancementsChange={setChanges} /></Suspense>}
-    {changes && <button className="mj-primary" style={{ position: 'absolute', top: 90, right: 24, zIndex: 5 }} disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save object placements'}</button>}
-    {props.activeStep !== null && resolved?.audioUrls?.length > 0 && <audio key={props.activeStep} controls aria-label="Saved guided narration" style={{ position: 'absolute', bottom: 100, left: 24, zIndex: 5 }} src={resolved.audioUrls[savedWorld.guidedTour?.chapters?.[props.activeStep]?.audioAssetIndex ?? 0]} />}
+    {!resolved ? <p role="status">Opening your saved world…</p> : <Suspense fallback={<p role="status">Opening viewer…</p>}><Viewer {...props} world={resolved} enhancementResponse={savedWorld.enhancementResponse} onEnhancementsChange={props.previewOnly ? undefined : setChanges} /></Suspense>}
+    {!props.previewOnly && changes && <button className="mj-primary" style={{ position: 'absolute', top: 90, right: 24, zIndex: 5 }} disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save object placements'}</button>}
+    {!props.previewOnly && props.activeStep != null && resolved?.audioUrls?.length > 0 && <audio key={props.activeStep} controls aria-label="Saved guided narration" style={{ position: 'absolute', bottom: 100, left: 24, zIndex: 5 }} src={resolved.audioUrls[savedWorld.guidedTour?.chapters?.[props.activeStep]?.audioAssetIndex ?? 0]} />}
   </div>
 }

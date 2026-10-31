@@ -57,7 +57,7 @@ function readEnhancements(payload, worldId) {
  try { return { enhancements: parseEnhancementsForWorld(payload, worldId), error: '' }; }
  catch (error) { console.warn('[MemoVerse] Enhancement response rejected.', error); return { enhancements: [], error: error.message }; }
 }
-export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = world === existingWorld ? DEMO_ENHANCEMENT_RESPONSE : null, onEnhancementsChange, mode, mood: externalMood }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = world === existingWorld ? DEMO_ENHANCEMENT_RESPONSE : null, onEnhancementsChange, mode, mood: externalMood, showDeveloperTools = false }){
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
   const initial=readEnhancements(enhancementResponse,world.id);
   return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
@@ -133,18 +133,18 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
-   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
+   {showDeveloperTools && anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
    <CameraJourney controls={controls} journey={journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
   </Canvas>
   <div className="atmosphere-wash" aria-hidden="true"/>
-  <div className="sense-controls" aria-label="SenseShift atmosphere">
+  {showDeveloperTools && <div className="sense-controls" aria-label="SenseShift atmosphere">
    {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>setMoodSetting(value)}>{value}</button>)}
    <button aria-pressed={quality==='full'} onClick={()=>setQuality(q=>q==='full'?'balanced':'full')}>{quality==='full'?'Full detail · switch to smooth':'Smooth · load full detail'}</button>
    <button onClick={()=>setJourney(n=>n+1)}>Return to memory</button>
    <button aria-pressed={ambience} onClick={toggleAmbience}>{ambience?'Mute ambience':'Play gentle ambience'}</button>
-  </div>
-  {(enhancements.length>0||enhancementError)&&<section className="enhancement-panel" aria-label="Enhanced objects">
+  </div>}
+  {showDeveloperTools && (enhancements.length>0||enhancementError)&&<section className="enhancement-panel" aria-label="Enhanced objects">
    <header><div><p className="enhancement-eyebrow">HIGH-DETAIL OVERLAY</p><h2>Enhanced objects</h2></div>
     <button aria-pressed={calibrating} onClick={()=>setCalibrating(value=>!value)}>{calibrating?'Done':'Calibrate'}</button></header>
    {enhancementError&&<p role="alert" className="enhancement-error">{enhancementError}</p>}
@@ -163,7 +163,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
     <button onClick={()=>setSelectedEnhancement(null)}>Close</button>
    </article>:<p className="enhancement-hint">Click an object in the room to read its story.</p>}
   </section>}
-  <details className="world-tools" open><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
+  {showDeveloperTools && <details className="world-tools"><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
    <label>New memory<textarea value={memory} maxLength={2000} rows={2} placeholder="Write a real memory, then place it in the room…" onChange={e=>setMemory(e.target.value)}/></label>
    <button disabled={!memory.trim()&&!placing} onClick={()=>setPlacing(placing?false:'new')}>{placing?'Cancel placement':'Place memory'}</button>
    {placing&&<p>Double-click a surface to {placing==='move'?'move this memory':'place your memory'}.</p>}
@@ -178,6 +178,6 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    {audioError&&<p role="alert">{audioError}</p>}
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
    <p className="local-note">Attachments stay in this tab. Reloading or switching modes clears the journal. No uploads or API calls here.</p>
-  </details>
+  </details>}
  </div></Boundary>;
 }
