@@ -1,56 +1,46 @@
-"""Backend contract proposal; renderer team must confirm before shared adoption."""
-from typing import Annotated, List, Literal, Optional, Tuple
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from typing import List, Literal, Optional, Tuple
+from pydantic import BaseModel, Field
 
-AssetType = Literal['desk', 'bed', 'chair', 'window', 'bookshelf', 'lamp', 'photo-frame']
-Mood = Literal['nostalgic', 'joyful', 'melancholic']
-Coordinate = Annotated[float, Field(ge=-10, le=10, allow_inf_nan=False, strict=True)]
-Scale = Annotated[float, Field(gt=0, le=5, allow_inf_nan=False, strict=True)]
-Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+ObjectType = Literal[
+    'desk',
+    'chair',
+    'window',
+    'bed',
+    'bookshelf',
+    'lamp',
+    'rug',
+    'wardrobe',
+    'plant',
+    'photo-frame',
+]
 
-class ContractModel(BaseModel):
-    model_config = ConfigDict(extra='forbid')
+class DetectedObject(BaseModel):
+    label: str
+    approximate_position: str
+    confidence: float = Field(ge=0.0, le=1.0)
 
-class SceneObject(ContractModel):
-    id: Annotated[str, StringConstraints(pattern=r'^[A-Za-z0-9_-]{1,64}$')]
-    type: AssetType
-    position: Tuple[Coordinate, Coordinate, Coordinate]
-    scale: Tuple[Scale, Scale, Scale]
-    memory: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
-    # No audio assets exist yet. Never render provider-supplied URLs.
-    audioUrl: Optional[str]
+class PhotoAnalysis(BaseModel):
+    visible_objects: List[DetectedObject] = Field(default_factory=list)
+    spatial_layout: str
+    lighting_and_colors: str
+    uncertainty_notes: str
 
-    @model_validator(mode='after')
-    def no_untrusted_audio(self):
-        if self.audioUrl is not None:
-            raise ValueError('audioUrl must be null until an audio catalog is coordinated')
-        return self
+class SceneObject(BaseModel):
+    id: str
+    type: ObjectType
+    position: Tuple[float, float, float]
+    scale: Tuple[float, float, float] = (1.0, 1.0, 1.0)
+    memory: str = ''
+    audioUrl: Optional[str] = None
 
-class Scene(ContractModel):
-    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
-    environment: Literal['bedroom']
-    mood: Mood
-    objects: List[SceneObject] = Field(min_length=1, max_length=7)
+class Scene(BaseModel):
+    title: str
+    environment: str = 'bedroom'
+    mood: str = 'nostalgic'
+    objects: List[SceneObject] = Field(default_factory=list)
 
-    @model_validator(mode='after')
-    def unique_ids(self):
-        if len({obj.id for obj in self.objects}) != len(self.objects):
-            raise ValueError('Object IDs must be unique')
-        return self
-
-class VisibleObject(ContractModel):
-    description: Text
-    location: Text
-
-class PhotoAnalysis(ContractModel):
-    objects: List[VisibleObject] = Field(max_length=20)
-    spatial_layout: Text
-    lighting: Text
-    colors: List[Annotated[str, StringConstraints(min_length=1, max_length=80)]] = Field(max_length=10)
-    uncertainty: Text
-
-class GenerateResponse(ContractModel):
+class GenerateResponse(BaseModel):
     scene: Scene
     source: Literal['ai', 'mock']
     fallback: bool
-    reason: Optional[Literal['demo_mode', 'missing_credentials', 'provider_timeout', 'provider_failure', 'invalid_model_output']]
+    reason: Optional[str] = None
