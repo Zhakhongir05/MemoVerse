@@ -59,7 +59,10 @@ class EnhancementTests(unittest.TestCase):
         with TestClient(app) as client:
             app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,planner)
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
-            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai');self.assertEqual(r.json()['enhancements'][0]['memory'],'My supplied story')
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai');self.assertEqual(r.json()['enhancements'][0]['memory'],'User supplied memory')
+            planner.chat.completions.create.return_value=completion({'enhancements':[{**item(),'memory':''}]})
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.json()['enhancements'][0]['memory'],'My supplied story')
             planner.chat.completions.create.return_value=completion({'enhancements':[{**item(),'assetId':'bad'}]})
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['source'],'demo');self.assertTrue(r.json()['fallback'])

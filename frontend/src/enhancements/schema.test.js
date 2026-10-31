@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { DEMO_ENHANCEMENT_RESPONSE, parseEnhancementResponse, parseEnhancementsForWorld } from './schema.js'
+import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementResponse, parseEnhancementsForWorld } from './schema.js'
 
 const clone = () => structuredClone(DEMO_ENHANCEMENT_RESPONSE)
 
@@ -82,4 +82,25 @@ test('rejects an oversized enhancement list', () => {
     id: `bed-${index}`,
   }))
   assert.throws(() => parseEnhancementResponse(payload), /too many/)
+})
+
+test('fits approximate placements inside the room, clamped on x/z only', () => {
+  const bounds = { min: { x: -4, y: -1.5, z: -6 }, max: { x: 3, y: 2.5, z: 2 } }
+  const enhancements = parseEnhancementResponse(clone()).enhancements
+  const outside = enhancements.map((enhancement, index) => ({
+    ...enhancement,
+    position: index === 0 ? [40, 5, -40] : enhancement.position,
+  }))
+
+  const fitted = fitEnhancementsToBounds(outside, bounds)
+
+  assert.deepEqual(fitted[0].position, [3 - 0.15, 5, -6 + 0.15])
+  assert.deepEqual(fitted[1].position, enhancements[1].position)
+})
+
+test('centers placements when the room is narrower than the margin', () => {
+  const bounds = { min: { x: 0, y: 0, z: 0 }, max: { x: 0.1, y: 1, z: 0.1 } }
+  const [enhancement] = parseEnhancementResponse(clone()).enhancements
+  const [fitted] = fitEnhancementsToBounds([{ ...enhancement, position: [9, 1, 9] }], bounds)
+  assert.deepEqual(fitted.position, [0.05, 1, 0.05])
 })

@@ -117,6 +117,28 @@ export function parseEnhancementsForWorld(payload, worldId) {
 }
 
 /**
+ * Keeps approximate (AI) placements inside the rendered room. Only X/Z are
+ * clamped — Y is grounded against the collider separately — so a model guess
+ * cannot put furniture through a wall or outside the floor.
+ */
+export function fitEnhancementsToBounds(enhancements, bounds, margin = 0.15) {
+  if (!bounds) return enhancements
+  const fit = (value, min, max) => {
+    const low = min + margin
+    const high = max - margin
+    return low > high ? (min + max) / 2 : Math.min(Math.max(value, low), high)
+  }
+  return enhancements.map((enhancement) => ({
+    ...enhancement,
+    position: [
+      fit(enhancement.position[0], bounds.min.x, bounds.max.x),
+      enhancement.position[1],
+      fit(enhancement.position[2], bounds.min.z, bounds.max.z),
+    ],
+  }))
+}
+
+/**
  * Demo payload hand-fitted to saved room 4fad570a…, in that world's raw asset
  * units (not meters). Positions are expected to need a final nudge with the
  * in-app calibration gizmo — that is what `confidence` communicates.

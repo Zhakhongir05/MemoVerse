@@ -20,13 +20,13 @@ Photographs provide relative relationships, not correspondence to splat coordina
 
 Calibration fields: pointA[3], pointB[3] in rendered world coordinates, distanceMeters (positive), evidence:"measured-scene-distance". unitsPerMeter = distance(pointA,pointB)/distanceMeters. Distinct finite points are required. This is caller-supplied measured evidence, not a claim that the server measured the room. Never submit AI-estimated dimensions as measurements. The existing frontend parser ignores unitsPerMeter; it does not automatically resize GLBs. Scale remains an explicit per-object render transform requiring calibration.
 
-Memory for AI objects is copied only from the submitted user story, never model-generated personal prose. User-edited per-object memories are preserved.
+Each AI object carries a short factual description of its visible appearance (max 200 characters, prompt-constrained to exclude people, names, events and personal details). If the model returns none, the user's own story is used as the fallback. User-edited per-object memories are preserved.
 
 ## AI and workflow
 
 With no proposals and a photograph, the existing configured OpenAI client produces validated PhotoAnalysis. The existing DeepSeek/Lablup client selects only approved assets and proposes bounded transforms, validated as a Plan then manifest. Total model work is bounded by a 35-second timeout; provider errors return an empty explicitly labeled demo fallback. Demo/missing-client mode returns no invented furniture. Invalid inputs return 422/413. Private responses use existing no-store middleware; raw provider data, stories and keys are not logged.
 
-The current backend checkout has no World Labs generation service/job completion hook. This new endpoint is ready for a caller to invoke after receiving a world ID; it is not silently wired to generate worlds or automatically integrated into the teammate renderer. Frontend rendering remains untouched. Browser overlay alignment and GLB availability/visual quality were not tested here. No paid providers were called.
+World Labs generation is still pinned to the existing saved world: this checkout has no generation client, so the splat/collider URLs stay hardcoded until API credentials exist. The client now sends the uploaded memory photograph when one exists (proposals empty, so the AI path runs) and falls back to proposals-only otherwise. AI placements are first clamped to the collider's X/Z bounds and then pulled toward the room centre until a downward ray meets real floor, so an approximate guess can never render outside the room; Y remains grounded by the viewer's own raycast.
 
 ## Example user adjustment
 

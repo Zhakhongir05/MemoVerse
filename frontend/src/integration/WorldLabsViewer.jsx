@@ -3,11 +3,11 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SparkRenderer, SplatMesh } from '@sparkjsdev/spark';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { Box3, MeshBasicMaterial, DoubleSide, Vector3 } from 'three';
+import { Box3, MeshBasicMaterial, DoubleSide, Raycaster, Vector3 } from 'three';
 import { existingWorld } from './existingWorld.js';
 import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
-import { DEMO_ENHANCEMENT_RESPONSE, parseEnhancementsForWorld } from '../enhancements/schema.js';
+import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld } from '../enhancements/schema.js';
 import { requestEnhancements, toProposal } from '../enhancements/api.js';
 
 function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
@@ -56,7 +56,29 @@ function readEnhancements(payload) {
  try { return { enhancements: parseEnhancementsForWorld(payload, existingWorld.id), error: '' }; }
  catch (error) { console.warn('[MemoVerse] Enhancement response rejected.', error); return { enhancements: [], error: error.message }; }
 }
-export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT_RESPONSE, mood: externalMood }){
+// A model guess can land beyond the walls even after bounding-box clamping,
+// because the box includes empty corners. Pull those points toward the room
+// center until a downward ray meets real floor geometry.
+const SETTLE_STEPS=[0.75,0.5,0.25,0];
+function floorHit(mesh,[x,,z]){
+ const ray=new Raycaster();ray.set(new Vector3(x,50,z),new Vector3(0,-1,0));
+ return ray.intersectObject(mesh,true).length>0;
+}
+function settleInsideRoom(mesh,list){
+ if(!mesh)return list;
+ mesh.updateWorldMatrix(true,true);
+ const box=new Box3().setFromObject(mesh),cx=(box.min.x+box.max.x)/2,cz=(box.min.z+box.max.z)/2;
+ return list.map(enhancement=>{
+  const [x,,z]=enhancement.position;
+  if(floorHit(mesh,enhancement.position))return enhancement;
+  for(const step of SETTLE_STEPS){
+   const nx=cx+(x-cx)*step,nz=cz+(z-cz)*step;
+   if(floorHit(mesh,[nx,0,nz]))return {...enhancement,position:[nx,enhancement.position[1],nz]};
+  }
+  return enhancement;
+ });
+}
+export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT_RESPONSE, mood: externalMood, imageUrl = '', scene = null }){
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
   const initial=readEnhancements(enhancementResponse);
   return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
@@ -72,7 +94,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  const [selectedEnhancement,setSelectedEnhancement]=useState(null);
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
  const [colliderMesh,setColliderMesh]=useState(null);
- const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null);
+ const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null),needsFit=useRef(false),roomRef=useRef(null);
  const selectedAnchor=anchors.find(a=>a.id===selected);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
  useEffect(()=>{
@@ -81,34 +103,73 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
   setSelectedEnhancement(null);
  },[enhancementResponse]);
- // Ask the backend to reissue placements for the mounted world. The demo
- // objects render immediately and are only replaced once a valid manifest
- // arrives, so a slow or missing backend never empties the room.
+ // Ask the backend for placements of the mounted world. With an uploaded photo
+ // it runs the AI path (objects + locations from the image); without one it
+ // reissues the current placements as user proposals. Demo objects render
+ // immediately and are replaced only by a validated manifest, so a slow or
+ // missing backend never empties the room.
+ const story=scene?.description??'';
  useEffect(()=>{
   const controller=new AbortController();let active=true;
-  const demo=readEnhancements(enhancementResponse).enhancements;
-  requestEnhancements({
-   worldId:existingWorld.id,
-   story:'A quiet bedroom remembered at dusk.',
-   proposals:demo.map(toProposal),
-  },{signal:controller.signal})
-   .then(payload=>{
+  async function load(){
+   const demo=readEnhancements(enhancementResponse).enhancements;
+   let photo=null;
+   if(imageUrl){
+    try{
+     const source=await fetch(imageUrl,{signal:controller.signal});
+     if(!source.ok)throw new Error(`photo read failed (${source.status})`);
+     const blob=await source.blob();
+     photo=new File([blob],'memory-photo',{type:blob.type||'image/jpeg'});
+    }catch(error){
+     if(error.name==='AbortError'||!active)return;
+     console.info('[MemoVerse] Uploaded photo could not be read; keeping current objects.',error.message);
+     return;
+    }
+   }
+   try{
+    const payload=await requestEnhancements({
+     worldId:existingWorld.id,
+     story,
+     proposals:photo?[]:demo.map(toProposal),
+     photo,
+    },{signal:controller.signal});
     if(!active)return;
     const next=readEnhancements(payload);
     if(next.error||next.enhancements.length===0){
      console.info('[MemoVerse] Backend sent no usable placements; keeping current objects.',next.error||`source=${payload.source} fallback=${payload.fallback}`);
      return;
     }
-    console.info(`[MemoVerse] Loaded ${next.enhancements.length} placements (source=${payload.source}, fallback=${payload.fallback}).`);
-    setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:''});
+    let placements=next.enhancements;
+    if(payload.source==='ai'){
+     const room=roomRef.current;
+     if(room)placements=settleInsideRoom(room,fitEnhancementsToBounds(placements,new Box3().setFromObject(room)));
+     else needsFit.current=true;
+    }
+    console.info(`[MemoVerse] Loaded ${placements.length} placements (source=${payload.source}, fallback=${payload.fallback}).`);
+    setEnhancementState({list:placements,baseline:placements,error:''});
     setSelectedEnhancement(null);
-   })
-   .catch(error=>{
+   }catch(error){
     if(error.name==='AbortError'||!active)return;
     console.info('[MemoVerse] Enhancement backend unavailable; keeping current objects.',error.message);
-   });
+   }
+  }
+  load();
   return ()=>{active=false;controller.abort();};
- },[enhancementResponse]);
+ },[enhancementResponse,imageUrl,story]);
+ // Keep the loaded collider available to the in-flight request without making
+ // the request re-run when the room finishes loading.
+ useEffect(()=>{
+  roomRef.current=colliderMesh;
+ },[colliderMesh]);
+ // Approximate AI placements may arrive before the collider finishes loading.
+ // Fit them into the room once its bounds are known.
+ useEffect(()=>{
+  if(!colliderMesh||!needsFit.current)return;
+  needsFit.current=false;
+  const bounds=new Box3().setFromObject(colliderMesh);
+  const fitAll=list=>settleInsideRoom(colliderMesh,fitEnhancementsToBounds(list,bounds));
+  setEnhancementState(state=>({...state,list:fitAll(state.list),baseline:fitAll(state.baseline)}));
+ },[colliderMesh]);
  function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
  function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform}:e)}));}
  // Collider grounding lands once per world load; write it to the baseline too so
