@@ -28,10 +28,10 @@ test('one completed world prepares one saved podcast; headphones replay without 
  await page.getByRole('button',{name:'Listen',exact:true}).click();
  const audio=page.locator('audio');await expect(audio).toHaveCount(1);
  await expect.poll(()=>audio.evaluate(a=>a.currentTime)).toBeGreaterThan(.1);
- await expect(page.getByRole('heading',{name:'Personal chapter 2',exact:true})).toBeVisible();
+ await expect(audio).toHaveAttribute('hidden','');await expect(page.getByText('Transcript',{exact:true})).toHaveCount(0);
  expect(creates).toBe(1);expect(steps).toBe(3);
  await page.reload();await expect(page.locator('[data-world-state="ready"]')).toBeVisible();
- await page.getByRole('button',{name:'Listen',exact:true}).click();await expect(page.getByRole('heading',{name:'Personal chapter 1',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);
  expect(creates).toBe(1);expect(steps).toBe(3);expect(errors).toEqual([]);
 });
 
@@ -56,12 +56,12 @@ test('one creation action prepares podcast, enters world automatically, headphon
  await expect.poll(()=>advances).toBe(3);expect(creates).toBe(1);
  await expect(page.getByText('Memory journal ·',{exact:false})).toHaveCount(0);
  await page.getByRole('button',{name:'Listen',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toHaveCount(0);
  await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);
- await page.getByRole('button',{name:'Next chapter',exact:true}).click();await expect(page.getByRole('heading',{name:'Saved chapter 2'})).toBeVisible();
- await page.reload();await expect(page.getByRole('region',{name:'Immersive memory exploration'})).toBeVisible();await page.getByRole('button',{name:'Listen',exact:true}).click();await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toBeVisible();expect(creates).toBe(1);expect(advances).toBe(3);expect(errors).toEqual([]);
+ await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.paused)).toBe(true);await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.paused)).toBe(false);
+ await page.reload();await expect(page.getByRole('region',{name:'Immersive memory exploration'})).toBeVisible();await page.getByRole('button',{name:'Listen',exact:true}).click();await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);expect(creates).toBe(1);expect(advances).toBe(3);expect(errors).toEqual([]);
  await expect(page.locator('[data-world-state="ready"]')).toBeAttached({timeout:30000});await page.screenshot({path:'test-results/minimal-memory-player.png',animations:'disabled'});
- await page.setViewportSize({width:390,height:844});const player=page.locator('.im-listening');await expect(player).toBeVisible();expect((await player.boundingBox()).width).toBeLessThanOrEqual(390);await page.screenshot({path:'test-results/minimal-memory-mobile.png',animations:'disabled'});
+ await page.setViewportSize({width:390,height:844});await expect(page.locator('.im-listening')).toHaveCount(0);await expect(page.locator('audio')).toBeHidden();await page.screenshot({path:'test-results/minimal-memory-mobile.png',animations:'disabled'});
  await page.getByRole('button',{name:'Listen',exact:true}).click();await page.getByRole('button',{name:'Back to memory',exact:true}).click();await page.getByRole('button',{name:'← Back to My Journal',exact:true}).click();await page.getByRole('button',{name:'Listen to memory',exact:true}).click();await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toBeVisible();await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);expect(creates).toBe(1);
 });
 

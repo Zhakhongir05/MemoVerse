@@ -81,7 +81,7 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
       <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit} aria-label="Back to memory">← Back</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div>{symbolic && <span className="im-mode-label">Sample</span>}</div>
       {photoError && <p className="im-fullscreen-error" role="alert">{photoError}</p>}
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
-      {listening && <div className="im-listening"><MemoryPodcast key={memory.id} compact autoPlay onPlaybackChange={setPodcastCue} memory={memory} user={user} /></div>}
+      <div className="im-audio-status" hidden={!listening}><MemoryPodcast key={memory.id} compact autoPlay={listening} onPlaybackChange={setPodcastCue} memory={memory} user={user} /></div>
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">
         <Tool label="Listen" icon="headphones" active={listening} onClick={() => setListening(value => !value)} />
         <Tool label={favorite ? 'Favorited' : 'Favorite'} icon="heart" active={favorite} onClick={onFavorite} disabled={favoriteBusy} />

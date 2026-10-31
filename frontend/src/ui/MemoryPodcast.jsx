@@ -32,7 +32,8 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange, autoPlay
   useEffect(()=>()=>onPlaybackChange?.(null),[onPlaybackChange])
   const tour=result?.tour, ready=!error && tour?.status==='ready' && tour.audio?.length===3,part=tour?.script?.chapters?.[chapter]
   useEffect(()=>{
-    if(!autoPlay || !ready || played.current || !audio.current)return
+    if(!autoPlay){audio.current?.pause();played.current=false;return}
+    if(!ready || played.current || !audio.current)return
     played.current=true
     audio.current.play().catch(()=>setPlayBlocked(true))
   },[autoPlay,ready,chapter])
@@ -43,11 +44,11 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange, autoPlay
     {!error&&['failed','uncertain'].includes(tour?.status)&&<p role="status">Your included podcast needs recovery. Your journal is safe; no extra world generation is needed.</p>}
     {!error&&result&&!tour&&<p role="status">The podcast will be included when this memory is made into a world.</p>}
     {ready&&part&&<>
-      <p className="mj-podcast-count">{chapter+1}/3</p><h3>{part.title}</h3><details className="mj-podcast-transcript"><summary>Transcript</summary><p>{part.narration}</p></details>
-      <audio ref={audio} aria-label="Memory podcast audio" onPlay={()=>{setPlayBlocked(false);onPlaybackChange?.(part)}} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2){played.current=false;setChapter(n=>n+1)}}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls preload="none" src={tour.audio?.[chapter]?.url}/>
-      {playBlocked&&<p role="status">Press play to listen.</p>}
-      <button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n-1)}} aria-label="Previous chapter" title="Previous chapter">←</button>
-      <button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n+1)}} aria-label="Next chapter" title="Next chapter">→</button>
+      {!compact && <><p className="mj-podcast-count">{chapter+1}/3</p><h3>{part.title}</h3><details className="mj-podcast-transcript"><summary>Transcript</summary><p>{part.narration}</p></details></>}
+      <audio ref={audio} aria-label="Memory podcast audio" onPlay={()=>{setPlayBlocked(false);onPlaybackChange?.(part)}} onPause={()=>onPlaybackChange?.(null)} onEnded={()=>{onPlaybackChange?.(null);if(chapter<2){played.current=false;setChapter(n=>n+1)}}} onError={()=>setError('Narration could not play. Retry loading to refresh the private audio link.')} key={chapter+':'+tour.id} controls={!compact} hidden={compact} preload="none" src={tour.audio?.[chapter]?.url}/>
+      {playBlocked&&<p role="status">{compact ? "Tap headphones again to retry playback." : "Press play to listen."}</p>}
+      {!compact && <><button type="button" disabled={chapter===0} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n-1)}} aria-label="Previous chapter" title="Previous chapter">←</button>
+      <button type="button" disabled={chapter===2} onClick={()=>{onPlaybackChange?.(null);played.current=false;setChapter(n=>n+1)}} aria-label="Next chapter" title="Next chapter">→</button></>}
     </>}
 
   </section>
