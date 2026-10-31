@@ -19,5 +19,9 @@
       "source": "/health",
       "destination": "/api/index"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": true
+  },
+  "ignoreCommand": "exit 1"
 }
