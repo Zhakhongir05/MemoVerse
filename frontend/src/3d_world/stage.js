@@ -1,8 +1,9 @@
 import { createContext, useContext } from 'react'
 
-// Fixed camera, straight-on. A point at depth 0 sits on the painted image plane.
+// Fixed camera, straight-on. The backdrop sits well behind the props so no
+// furniture geometry can poke through the image plane.
 export const CAMERA_Z = 11
-export const BACKDROP_Z = 0
+export const BACKDROP_Z = -4
 export const CAMERA_FOV = 45
 export const DEPTH_MIN = 0.4
 export const DEPTH_MAX = 2.6
@@ -41,16 +42,37 @@ export function createStageMapping({
   const stageHeight = Math.min(visibleHeight, visibleWidth / imageAspect)
   const stageWidth = stageHeight * imageAspect
 
+  // Compensates for perspective so `scale` means "size relative to the image
+  // plane", independent of how far forward the object sits.
+  const depthScale = (depth = 0) => {
+    const d = Math.min(1, Math.max(0, depth))
+    const z = DEPTH_MIN + d * (DEPTH_MAX - DEPTH_MIN)
+    return (CAMERA_Z - z) / cameraDistance
+  }
+
   const toWorld = (nx, ny, depth = 0) => {
     const d = Math.min(1, Math.max(0, depth))
     const z = DEPTH_MIN + d * (DEPTH_MAX - DEPTH_MIN)
     // Perspective shrink so the object's origin projects onto (nx, ny).
-    const scale = (CAMERA_Z - z) / cameraDistance
+    const scale = depthScale(d)
 
     return [
       (nx - 0.5) * stageWidth * scale,
       (0.5 - ny) * stageHeight * scale,
       z,
+    ]
+  }
+
+  // Inverse of toWorld's x/y, used by the dev drag-to-place tool.
+  const fromWorld = (x, y, depth = 0) => {
+    const d = Math.min(1, Math.max(0, depth))
+    const scale = depthScale(d)
+    const width = stageWidth * scale
+    const height = stageHeight * scale
+
+    return [
+      Math.min(1, Math.max(0, 0.5 + x / width)),
+      Math.min(1, Math.max(0, 0.5 - y / height)),
     ]
   }
 
@@ -60,6 +82,8 @@ export function createStageMapping({
     imageAspect,
     aspect,
     toWorld,
+    fromWorld,
+    depthScale,
   }
 }
 

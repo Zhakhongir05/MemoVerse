@@ -32,13 +32,24 @@ The AI-generated background **is** the room. The renderer draws only the interac
 }
 ```
 
+## Camera controls
+
+The renderer ships an inspectable camera:
+
+- **Scroll** — zoom, toward the cursor.
+- **Drag** — orbit around the X and Y axes.
+- **Right-drag** — pan.
+- **Double-click** — reset the view.
+
+The background plane and the props live in the same 3D scene, so they stay aligned while orbiting.
+
 ## Coordinates
 
 - `position: [x, y]` is **normalized to the background image**: `x: 0 → left, 1 → right`; `y: 0 → TOP, 1 → bottom`.
 - The point is the object's **base center** — where it touches the painted floor or surface. Props grow upward from it.
 - `depth: 0..1` — `0` sits on the painted plane, `1` is closest to the camera. Use `0.1 .. 0.4`; larger values create more mouse parallax.
 - `rotation`: yaw in **degrees** as a number, or a full `[x, y, z]` in degrees.
-- `scale`: number or `[x, y, z]`. `1` is the primitive's native size. Tune per generated image; the backend should return a sensible value.
+- `scale`: number or `[x, y, z]`. `1` is the primitive's native size **relative to the image plane** — the renderer compensates for perspective, so changing `depth` does not change apparent size. Tune per generated image; the backend should return a sensible value.
 - The renderer **letterboxes the image (object-fit: contain)**. Mapping stays exact at any window size, so `[0.5, 0.5]` is always the image center.
 - Background images should be **16:9**, at least 1280×720, and served with CORS headers.
 - The camera is fixed and straight-on. Do not ask the image to contain camera pitch/tilt beyond normal room perspective.
@@ -66,7 +77,7 @@ The AI-generated background **is** the room. The renderer draws only the interac
       "position": [0.23, 0.82],
       "depth": 0.12,
       "rotation": [0, 8, 0],
-      "scale": 1.35,
+      "scale": 1.95,
       "label": "Your childhood bed",
       "memoryId": "mem_bed_1"
     }
@@ -100,3 +111,5 @@ Anything unknown renders a neutral placeholder box and is still clickable — it
 ## Testing without the backend
 
 `npm run dev`, then use the **“Edit scene JSON”** button in the bottom-left. Paste any payload and press Apply — no API needed. It is dev-only and is stripped from production builds. Rendering with no `background.url` falls back to the dark gradient, so the props are still visible while you iterate.
+
+Click **Move props** to drag any prop in X/Y on the image plane. The editor collapses out of the way while edit mode is on; click **Stop moving props**, then **Copy current** to copy the calibrated positions back out as scene JSON.

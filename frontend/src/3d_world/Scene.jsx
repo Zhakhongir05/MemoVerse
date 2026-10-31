@@ -1,7 +1,7 @@
-import { Component, Suspense, useEffect, useMemo, useState } from 'react'
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
-import { useTexture } from '@react-three/drei'
-import { SRGBColorSpace } from 'three'
+import { OrbitControls, useTexture } from '@react-three/drei'
+import { BackSide, SRGBColorSpace } from 'three'
 
 import Interactable from './Interactable'
 import { getObjectComponent } from './registry'
@@ -117,13 +117,59 @@ function Lighting({ atmosphere }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Controls                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function CameraRig({ enabled = true }) {
+  const controls = useRef()
+  const domElement = useThree((state) => state.gl.domElement)
+
+  useEffect(() => {
+    const handleDoubleClick = () => controls.current?.reset()
+    domElement.addEventListener('dblclick', handleDoubleClick)
+    return () => domElement.removeEventListener('dblclick', handleDoubleClick)
+  }, [domElement])
+
+  return (
+    <OrbitControls
+      ref={controls}
+      makeDefault
+      enabled={enabled}
+      enableDamping
+      dampingFactor={0.08}
+      zoomToCursor
+      rotateSpeed={0.7}
+      zoomSpeed={0.8}
+      panSpeed={0.7}
+      minDistance={4}
+      maxDistance={24}
+      minPolarAngle={Math.PI / 2 - 0.7}
+      maxPolarAngle={Math.PI / 2 + 0.5}
+      minAzimuthAngle={-1.0}
+      maxAzimuthAngle={1.0}
+    />
+  )
+}
+
+// Hides the void behind the backdrop when the camera orbits or zooms out.
+function VoidBackdrop() {
+  return (
+    <mesh>
+      <sphereGeometry args={[60, 32, 16]} />
+      <meshBasicMaterial color="#0b0807" side={BackSide} />
+    </mesh>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* Scene                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function SceneContents({ scene, onSelect, onHover }) {
+function SceneContents({ scene, onSelect, onHover, onMove, editMode }) {
   return (
     <StageProvider background={scene.background}>
       <Lighting atmosphere={scene.atmosphere} />
+      {scene.background.url && <VoidBackdrop />}
       <Background background={scene.background} />
 
       {scene.objects.map((object) => {
@@ -135,11 +181,15 @@ function SceneContents({ scene, onSelect, onHover }) {
             object={object}
             onSelect={onSelect}
             onHover={onHover}
+            onMove={onMove}
+            editMode={editMode}
           >
             {(hovered) => <ObjectComponent hovered={hovered} />}
           </Interactable>
         )
       })}
+
+      <CameraRig enabled={!editMode} />
     </StageProvider>
   )
 }
@@ -151,12 +201,56 @@ export default function Scene({
   onHover,
 }) {
   const [override, setOverride] = useState(null)
+  const [edited, setEdited] = useState(null)
+  const [editMode, setEditMode] = useState(false)
 
   const incoming = useMemo(() => normalizeScene(scene), [scene])
-  const active = useMemo(
-    () => (override ? normalizeScene(override) : incoming),
-    [override, incoming],
+  // A dev override/edit is tied to the incoming scene it was made against, so
+  // generating a new memory always wins over stale calibration state.
+  const active = useMemo(() => {
+    if (edited?.base === incoming) return edited.scene
+    if (override?.base === incoming) return normalizeScene(override.scene)
+    return incoming
+  }, [edited, override, incoming])
+
+  const handleMove = useCallback(
+    (id, position) => {
+      setEdited((previous) => {
+        const base = previous?.base === incoming ? previous.scene : active
+
+        return {
+          base: incoming,
+          scene: {
+            ...base,
+            objects: base.objects.map((object) =>
+              object.id === id ? { ...object, position } : object,
+            ),
+          },
+        }
+      })
+    },
+    [active, incoming],
   )
+
+  const handleApply = useCallback(
+    (next) => {
+      setEdited(null)
+      setOverride({ base: incoming, scene: next })
+      setEditMode(false)
+    },
+    [incoming],
+  )
+
+  const handleReset = useCallback(() => {
+    setEdited(null)
+    setOverride(null)
+    setEditMode(false)
+  }, [])
+
+  const toggleEditMode = useCallback(() => {
+    if (!editMode) setEdited({ base: incoming, scene: normalizeScene(active) })
+    setEditMode((value) => !value)
+  }, [active, editMode, incoming])
 
   return (
     <div
@@ -170,8 +264,9 @@ export default function Scene({
       }}
     >
       <Canvas
+        // The background image supplies the room and its lighting; there is no
+        // 3D floor for shadows to land on, so the shadow map stays off.
         gl={{ alpha: true }}
-        shadows
         dpr={[1, 2]}
         camera={{
           position: [0, 0, CAMERA_Z],
@@ -181,8 +276,28 @@ export default function Scene({
         }}
         style={{ position: 'absolute', inset: 0 }}
       >
-        <SceneContents scene={active} onSelect={onSelect} onHover={onHover} />
+        <SceneContents
+          scene={active}
+          onSelect={onSelect}
+          onHover={onHover}
+          onMove={handleMove}
+          editMode={editMode}
+        />
       </Canvas>
+
+      {/* Soft fade-through when the scene changes; remounts on each new scene. */}
+      <div
+        key={`${active.id}:${active.background.url ?? ''}`}
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 4,
+          pointerEvents: 'none',
+          background: '#0b0807',
+          animation: 'memoverse-scene-fade 500ms ease-out forwards',
+        }}
+      />
 
       {loading && (
         <div
@@ -203,12 +318,39 @@ export default function Scene({
         </div>
       )}
 
+      <div
+        style={{
+          position: 'absolute',
+          right: 12,
+          bottom: 12,
+          zIndex: 5,
+          pointerEvents: 'none',
+          textAlign: 'right',
+          lineHeight: 1.6,
+          color: 'rgba(255, 220, 190, 0.55)',
+          fontFamily: 'ui-monospace, Consolas, monospace',
+          fontSize: 11,
+          letterSpacing: '0.06em',
+        }}
+      >
+        scroll — zoom
+        <br />
+        drag — orbit
+        <br />
+        right-drag — pan
+        <br />
+        double-click — reset
+      </div>
+
       {import.meta.env.DEV && (
         <DevScenePanel
           key={JSON.stringify(incoming)}
-          scene={incoming}
-          onApply={setOverride}
-          onReset={() => setOverride(null)}
+          scene={active}
+          baseScene={incoming}
+          editMode={editMode}
+          onToggleEditMode={toggleEditMode}
+          onApply={handleApply}
+          onReset={handleReset}
         />
       )}
     </div>

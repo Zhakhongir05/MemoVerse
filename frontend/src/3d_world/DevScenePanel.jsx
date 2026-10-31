@@ -24,9 +24,17 @@ const buttonStyle = {
 
 /**
  * Dev-only. Paste any backend payload to test it without wiring the API.
- * Mounted only when import.meta.env.DEV is true.
+ * "Move props" turns on the drag-to-place gizmo, and "Copy current" copies the
+ * calibrated scene JSON back out. Mounted only when import.meta.env.DEV is true.
  */
-export default function DevScenePanel({ scene, onApply, onReset }) {
+export default function DevScenePanel({
+  scene,
+  baseScene,
+  editMode = false,
+  onToggleEditMode,
+  onApply,
+  onReset,
+}) {
   const [open, setOpen] = useState(false)
   const [text, setText] = useState(() => JSON.stringify(scene, null, 2))
   const [error, setError] = useState(null)
@@ -43,8 +51,20 @@ export default function DevScenePanel({ scene, onApply, onReset }) {
 
   const reset = () => {
     onReset?.()
-    setText(JSON.stringify(scene, null, 2))
+    setText(JSON.stringify(baseScene, null, 2))
     setError(null)
+  }
+
+  const copyCurrent = async () => {
+    const json = JSON.stringify(scene, null, 2)
+    setText(json)
+
+    try {
+      await navigator.clipboard.writeText(json)
+      setError(null)
+    } catch {
+      setError('clipboard blocked — copy the JSON manually')
+    }
   }
 
   return (
@@ -61,30 +81,61 @@ export default function DevScenePanel({ scene, onApply, onReset }) {
             border: '1px solid rgba(255, 200, 150, 0.2)',
           }}
         >
-          <textarea
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            spellCheck={false}
+          {!editMode && (
+            <textarea
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              spellCheck={false}
+              style={{
+                width: '100%',
+                height: 260,
+                resize: 'vertical',
+                boxSizing: 'border-box',
+                color: '#f3e7da',
+                background: '#0b0807',
+                border: '1px solid rgba(255, 200, 150, 0.2)',
+                borderRadius: 6,
+                padding: 8,
+                font: 'inherit',
+                lineHeight: 1.5,
+              }}
+            />
+          )}
+          <div
             style={{
-              width: '100%',
-              height: 260,
-              resize: 'vertical',
-              boxSizing: 'border-box',
-              color: '#f3e7da',
-              background: '#0b0807',
-              border: '1px solid rgba(255, 200, 150, 0.2)',
-              borderRadius: 6,
-              padding: 8,
-              font: 'inherit',
-              lineHeight: 1.5,
+              display: 'flex',
+              gap: 8,
+              alignItems: 'center',
+              flexWrap: 'wrap',
             }}
-          />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button type="button" style={buttonStyle} onClick={apply}>
-              Apply
+          >
+            {!editMode && (
+              <>
+                <button type="button" style={buttonStyle} onClick={apply}>
+                  Apply
+                </button>
+                <button type="button" style={buttonStyle} onClick={reset}>
+                  Reset
+                </button>
+              </>
+            )}
+            <button type="button" style={buttonStyle} onClick={copyCurrent}>
+              Copy current
             </button>
-            <button type="button" style={buttonStyle} onClick={reset}>
-              Reset
+            <button
+              type="button"
+              onClick={onToggleEditMode}
+              style={{
+                ...buttonStyle,
+                background: editMode
+                  ? 'rgba(255, 178, 122, 0.22)'
+                  : buttonStyle.background,
+                borderColor: editMode
+                  ? 'rgba(255, 200, 150, 0.7)'
+                  : buttonStyle.border,
+              }}
+            >
+              {editMode ? 'Stop moving props' : 'Move props'}
             </button>
             {error && (
               <span style={{ color: '#ff8f7a', overflow: 'hidden' }}>
@@ -92,6 +143,12 @@ export default function DevScenePanel({ scene, onApply, onReset }) {
               </span>
             )}
           </div>
+          {editMode && (
+            <div style={{ color: 'rgba(255, 210, 170, 0.7)', lineHeight: 1.5 }}>
+              Drag any prop to move it in X/Y. Copy current gives you the new
+              normalized positions.
+            </div>
+          )}
         </div>
       )}
 
