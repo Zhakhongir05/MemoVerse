@@ -8,7 +8,8 @@ import ImmersiveMemory from './ImmersiveMemory'
 import RelivePreparation from './RelivePreparation'
 import GenerationPlans from './GenerationPlans'
 import PhotoPlanInfo from './PhotoPlanInfo'
-import { requestCreditGeneration } from './generationCredits'
+import WorldAllowance from '../integration/WorldAllowance.jsx'
+import {existingWorld} from '../integration/existingWorld.js'
 
 function useMediaUrl(file) {
   const [value, setValue] = useState({ file: null, url: '' })
@@ -32,7 +33,7 @@ const emptyDraft = () => ({ title: '', date: localDate(), story: '', mood: 'Nost
  * JourneyController can synchronize AI narration/camera poses with activeStep.
  * The built-in guided reading never pretends to drive the 3D camera or AI audio.
  */
-export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment = requestCreditGeneration, onPurchase }) {
+export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment, onPurchase }) {
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
   const [view, setView] = useState('journal')
@@ -222,11 +223,11 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   }
   function relive(mode, useSymbolic = false) { setSymbolic(useSymbolic); setJourneyMode(mode); setActiveStep(0); setView('relive'); setNotice('') }
 
-  if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView('detail')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
+  if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView(selected ? 'detail' : 'journal')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
 
   return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''}`}>
     <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◈</span> MemoVerse<span>.</span></button>
-      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>
+      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button>{LegacyStudio && <button onClick={() => navigate('studio')}>Memory Studio</button>}</nav>
       <div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
         if (!canLeave()) return
         setAccountBusy(true)
@@ -237,6 +238,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     {notice && <p className="mj-notice" role="status">{notice}</p>}
     {user && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
 
+    {['journal','timeline','creations'].includes(view) && <WorldAllowance user={user} />}
     {view === 'plans' && <GenerationPlans user={user} onSignIn={onSignIn} onPurchase={onPurchase} />}
     {view === 'timeline' && <MemoryTimeline owner={owner} entries={entries} loading={loading} onOpen={openMemory} onNew={createMemory} Photo={Photo} SceneRenderer={SceneRenderer} />}
 
@@ -268,7 +270,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
           <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>A world from your photograph. A story that brings you back.</p><button className="mj-primary" onClick={() => { setDemo(false); setView('prepare') }}>Relive My Memory ✧</button></div>
         </div></div></section>}
 
-    {view === 'prepare' && selected && <RelivePreparation user={user} Photo={Photo} onPlans={() => setView('plans')} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
+    {view === 'prepare' && selected && <RelivePreparation key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} onPlans={() => setView('plans')} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
       let saved = await saveEntry(owner, { ...selected, world: { ...result.world, ...(result.tour ? { guidedTour: result.tour } : {}), ...(typeof result.story === 'string' ? { preparedStory: result.story } : {}) }, story: selected.story, scene: result.scene || selected.scene, syncState: user ? 'pending' : 'local' })
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }

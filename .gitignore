@@ -1,11 +1,14 @@
-node_modules/
-__pycache__/
 .env
 .env.*
 !.env.example
-ai-env.ps1
-*.glb
-# The approved enhancement catalog assets are reviewed code, not generated output.
-!frontend/public/models/*.glb
-.DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+node_modules/
+dist/
 .venv/
+__pycache__/
+*.pyc
+.vercel/
+frontend/test-results/
+frontend/playwright-report/

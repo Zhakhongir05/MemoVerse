@@ -10,20 +10,19 @@ import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld } from '../enhancements/schema.js';
 import { requestEnhancements, toProposal } from '../enhancements/api.js';
 
-function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
+function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality, world}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
  useEffect(()=>{
   let active=true, mesh=null;
   onStatus('Loading saved world detail…');
   const spark=new SparkRenderer({renderer:gl,preBlurAmount:0,blurAmount:.3}); scene.add(spark);
-  const splat=new SplatMesh({url:quality==='full'?existingWorld.fullResUrl:existingWorld.splatUrl,lod:false});
+  const splat=new SplatMesh({url:quality==='full'?world.fullResUrl:world.splatUrl,lod:false});
   // Marble raw OpenCV splats -> Three.js. No metric scale is supplied for this draft.
   splat.rotation.x=Math.PI; scene.add(splat);
-  Promise.all([splat.initialized,new GLTFLoader().loadAsync(existingWorld.colliderUrl)]).then(([,gltf])=>{
+  Promise.all([splat.initialized,new GLTFLoader().loadAsync(world.colliderUrl)]).then(([,gltf])=>{
    if(!active){gltf.scene.traverse(o=>{o.geometry?.dispose();});return;}
    mesh=gltf.scene;
-   // The collider is exported in the splat's raw capture frame (same as the
-   // SplatMesh above), so it needs the same π rotation to land in render space.
+   // glTF collider is Y-up already; only raw splats need capture-frame rotation.
    mesh.traverse(o=>{if(o.isMesh){o.material=new MeshBasicMaterial({color:'#60ffb0',wireframe:true,transparent:true,opacity:0,depthWrite:false,side:DoubleSide});}});
    collider.current=mesh;setLoadedCollider({mesh,quality});onCollider?.(mesh);
    const bounds=new Box3().setFromObject(mesh);
@@ -31,9 +30,9 @@ function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality}) {
    console.info('World Labs assets loaded', {splats:splat.numSplats,colliderBounds:bounds.min.toArray().concat(bounds.max.toArray())});
   }).catch(()=>{if(active)onStatus('World assets failed to load. Switch to the primitive room to continue.');});
   return ()=>{active=false;scene.remove(spark,splat);splat.dispose();spark.dispose();if(mesh){scene.remove(mesh);mesh.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});}collider.current=null;onCollider?.(null);};
- },[gl,scene,onStatus,onCollider,quality]);
+ },[gl,scene,onStatus,onCollider,quality,world]);
  useEffect(()=>{collider.current?.traverse(o=>{if(o.isMesh)o.material.opacity=wireframe?.5:0;});});
- return loadedCollider?.quality===quality?<primitive object={loadedCollider.mesh} rotation={[Math.PI,0,0]} onDoubleClick={e=>{if(placing){e.stopPropagation();onPlace(e.point.toArray());}}}/>:null;
+ return loadedCollider?.quality===quality?<primitive object={loadedCollider.mesh} onDoubleClick={e=>{if(placing){e.stopPropagation();onPlace(e.point.toArray());}}}/>:null;
 }
 class Boundary extends Component {
  state={failed:false};static getDerivedStateFromError(){return {failed:true};}
@@ -52,8 +51,8 @@ function CameraJourney({controls,journey,onDone,ready}) {
   if(reduced||elapsed.current>2.8)onDone();
  });return null;
 }
-function readEnhancements(payload) {
- try { return { enhancements: parseEnhancementsForWorld(payload, existingWorld.id), error: '' }; }
+function readEnhancements(payload,worldId) {
+ try { return { enhancements: parseEnhancementsForWorld(payload, worldId), error: '' }; }
  catch (error) { console.warn('[MemoVerse] Enhancement response rejected.', error); return { enhancements: [], error: error.message }; }
 }
 // A model guess can land beyond the walls even after bounding-box clamping,
@@ -78,18 +77,20 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT_RESPONSE, mood: externalMood, imageUrl = '', scene = null }){
+export default function WorldLabsViewer({world=existingWorld,enhancementResponse,mood:externalMood,onMoodChange,embedded=false,imageUrl='',scene=null}){
+ const response=enhancementResponse??(world.id===existingWorld.id?DEMO_ENHANCEMENT_RESPONSE:null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
-  const initial=readEnhancements(enhancementResponse);
+  const initial=(response?readEnhancements(response,world.id):{enhancements:[],error:''});
   return {list:initial.enhancements,baseline:initial.enhancements,error:initial.error};
  });
- const [quality,setQuality]=useState('balanced');
- const [status,setStatus]=useState('Opening your saved memory world…');
+ const [quality,setQuality]=useState(()=>window.matchMedia('(pointer: fine)').matches?'full':'balanced');
+ const [status,setStatus]=useState(world.id===existingWorld.id?'Opening saved sample…':'Opening your newly generated world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
  const [anchors,setAnchors]=useState([]),[selected,setSelected]=useState(null);
  const [memory,setMemory]=useState(''),[moodSetting,setMoodSetting]=useState('nostalgic');
  // A host (the Dashboard's SenseShift radios) can drive the mood; otherwise use the local buttons.
- const mood=externalMood?externalMood.toLowerCase():moodSetting;
+ const requestedMood=externalMood?externalMood.toLowerCase():moodSetting;
+ const mood=['nostalgic','joyful','melancholic'].includes(requestedMood)?requestedMood:'nostalgic';
  const [journey,setJourney]=useState(1),[ambience,setAmbience]=useState(false),[audioError,setAudioError]=useState('');
  const [selectedEnhancement,setSelectedEnhancement]=useState(null);
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
@@ -98,11 +99,11 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  const selectedAnchor=anchors.find(a=>a.id===selected);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
  useEffect(()=>{
-  const next=readEnhancements(enhancementResponse);
+  const next=(response?readEnhancements(response,world.id):{enhancements:[],error:''});
   // oxlint-disable-next-line react/set-state-in-effect
   setEnhancementState({list:next.enhancements,baseline:next.enhancements,error:next.error});
   setSelectedEnhancement(null);
- },[enhancementResponse]);
+ },[response,world.id]);
  // Ask the backend for placements of the mounted world. With an uploaded photo
  // it runs the AI path (objects + locations from the image); without one it
  // reissues the current placements as user proposals. Demo objects render
@@ -112,7 +113,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
  useEffect(()=>{
   const controller=new AbortController();let active=true;
   async function load(){
-   const demo=readEnhancements(enhancementResponse).enhancements;
+   const demo=(response?readEnhancements(response,world.id):{enhancements:[],error:''}).enhancements;
    let photo=null;
    if(imageUrl){
     try{
@@ -126,15 +127,16 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
      return;
     }
    }
+   if(!photo&&!demo.length)return;
    try{
     const payload=await requestEnhancements({
-     worldId:existingWorld.id,
+     worldId:world.id,
      story,
      proposals:photo?[]:demo.map(toProposal),
      photo,
     },{signal:controller.signal});
     if(!active)return;
-    const next=readEnhancements(payload);
+    const next=readEnhancements(payload,world.id);
     if(next.error||next.enhancements.length===0){
      console.info('[MemoVerse] Backend sent no usable placements; keeping current objects.',next.error||`source=${payload.source} fallback=${payload.fallback}`);
      return;
@@ -155,7 +157,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   }
   load();
   return ()=>{active=false;controller.abort();};
- },[enhancementResponse,imageUrl,story]);
+ },[response,world.id,imageUrl,story]);
  // Keep the loaded collider available to the in-flight request without making
  // the request re-run when the room finishes loading.
  useEffect(()=>{
@@ -211,10 +213,10 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   for(const kind of ['photo','audio'])if(selectedAnchor?.[kind]){URL.revokeObjectURL(selectedAnchor[kind]);urls.current.delete(selectedAnchor[kind]);}
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
- return <Boundary><div className={`world-host immersive-world ${mood}`}>
+ return <Boundary><div className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
-   <Assets quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
+   <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
    {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
    <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
@@ -222,7 +224,7 @@ export default function WorldLabsViewer({ enhancementResponse = DEMO_ENHANCEMENT
   </Canvas>
   <div className="atmosphere-wash" aria-hidden="true"/>
   <div className="sense-controls" aria-label="SenseShift atmosphere">
-   {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>setMoodSetting(value)}>{value}</button>)}
+   {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>onMoodChange?onMoodChange(value):setMoodSetting(value)}>{value}</button>)}
    <button aria-pressed={quality==='full'} onClick={()=>setQuality(q=>q==='full'?'balanced':'full')}>{quality==='full'?'Full detail · switch to smooth':'Smooth · load full detail'}</button>
    <button onClick={()=>setJourney(n=>n+1)}>Return to memory</button>
    <button aria-pressed={ambience} onClick={toggleAmbience}>{ambience?'Mute ambience':'Play gentle ambience'}</button>

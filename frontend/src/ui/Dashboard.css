@@ -124,3 +124,6 @@
 .mv-submit-actions>.mv-save-button:disabled{opacity:.5;cursor:default}
 .mv-submit-actions>.mv-save-button:hover:enabled{background:#614438}
 .mv-submit-actions>.mv-primary{margin:0 0 9px}
+
+.mv-generated-preview{margin:0 0 1rem}.mv-generated-preview img{display:block;max-height:200px;width:100%;object-fit:contain;border-radius:12px}.mv-generated-preview figcaption{font-size:.8rem;padding:.5rem;color:var(--mv-muted,#bdb1a5)}
+.mv-world-consent{display:flex;gap:.5rem;align-items:flex-start;font-size:.85rem}.mv-world-generation .mv-world-consent input{width:auto;flex:none;margin:.2rem 0}.mv-world-generation progress{display:block;width:100%;accent-color:#dfad62}

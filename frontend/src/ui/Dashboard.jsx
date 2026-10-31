@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import './Dashboard.css'
 import MemoryLibrary from './MemoryLibrary'
 import useMemorySave from './useMemorySave'
+import WorldGeneration from '../integration/WorldGeneration.jsx'
+import { generateStudioMemory } from '../integration/studioApi.js'
 
 const MOODS = ['Nostalgic', 'Joyful', 'Melancholic']
-const MAX_IMAGE = 10 * 1024 * 1024
+const MAX_IMAGE = 4 * 1024 * 1024
 
 // Replace this adapter with the backend request. Reject on failure; honor signal.
 // Object URLs are local previews only: upload the actual File in production.
@@ -34,7 +36,7 @@ function Portal({ small = false }) {
  * generateMemory receives { file, audioFile, description, signal } and returns scene JSON.
  * The optional renderer may display a predefined demo.
  */
-export default function Dashboard({ SceneRenderer, generateMemory = generateMockMemory, user, onSignOut, onSignIn, onExplore, checkingAuth, initialScreen = 'landing' }) {
+export default function Dashboard({ SceneRenderer, generateMemory = generateStudioMemory, user, onSignOut, onSignIn, onExplore, checkingAuth, initialScreen = 'landing' }) {
   const [screen, setScreen] = useState(initialScreen)
   const [sceneExpanded, setSceneExpanded] = useState(false)
   const [inputsOpen, setInputsOpen] = useState(false)
@@ -45,6 +47,8 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState({})
   const [scene, setScene] = useState(null)
+  const [worldMode, setWorldMode] = useState('symbolic')
+  const [generatedWorld, setGeneratedWorld] = useState(null)
   const [failure, setFailure] = useState('')
   const [mood, setMood] = useState('Nostalgic')
   const [dragging, setDragging] = useState(false)
@@ -56,6 +60,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
   const heading = useRef(null)
   const isMock = generateMemory === generateMockMemory
   const pending = screen === 'generation' && !failure
+  const worldLabel = worldMode === 'generated' ? 'NEW GENERATED WORLD' : worldMode === 'sample' ? 'SAVED WORLD LABS SAMPLE' : scene ? 'AI SYMBOLIC SCENE' : 'SYMBOLIC PREVIEW'
   const draft = useMemo(() => ({ file, audioFile, description, mood, scene }), [file, audioFile, description, mood, scene])
   const memorySave = useMemorySave(user, draft)
   const saving = memorySave.status === 'saving'
@@ -103,7 +108,8 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
       const result = await generateMemory({ file, audioFile, description: description.trim(), signal: request.signal })
       if (request.signal.aborted) return
       if (!result || typeof result !== 'object') throw new Error('Invalid scene')
-      setScene(result)
+      setScene(result.scene || result)
+      setWorldMode('symbolic')
       setScreen('world')
     } catch (error) {
       if (request.signal.aborted) return
@@ -182,21 +188,24 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
         <div className="mv-glass mv-photo-panel"><div className="mv-panel-label"><span>01</span><h2>Your photograph</h2></div>
           <input ref={fileInput} id="mv-photo" className="mv-file-input" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose a memory photograph" aria-invalid={!!errors.image} aria-describedby="mv-photo-help mv-image-error" onChange={event => { selectImage(event.target.files?.[0]); event.target.value = '' }} />
           {imageUrl ? <div className="mv-image-preview"><img src={imageUrl} alt="Your selected memory" /><div className="mv-image-actions"><button type="button" onClick={() => fileInput.current?.click()}>Replace</button><button type="button" onClick={() => setFile(null)}>Remove</button></div></div> : <button type="button" className={`mv-dropzone ${dragging ? 'mv-dragging' : ''}`} onClick={() => fileInput.current?.click()} onDragOver={event => { event.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); selectImage(event.dataTransfer.files?.[0]) }}><span className="mv-upload-symbol" aria-hidden="true">＋</span><strong>Bring a moment into focus</strong><span>Drop your photograph here, or browse</span></button>}
-          <p id="mv-photo-help" className="mv-fine">JPG, PNG or WebP · Up to 10 MB · Choose a photo you can use</p>
+          <p id="mv-photo-help" className="mv-fine">JPG, PNG or WebP · Up to 4 MB · Choose a photo you can use</p>
           <p id="mv-image-error" className="mv-error" role="alert">{errors.image}</p>
         </div>
         <div className="mv-glass mv-description-panel"><div className="mv-panel-label"><span>02</span><h2>The story behind it</h2></div><label htmlFor="mv-description">What do you remember?</label><textarea id="mv-description" value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} aria-invalid={!!errors.description} aria-describedby="mv-description-help mv-description-error" placeholder="We were at my grandmother’s house. The windows were open, the room smelled of summer rain, and somewhere a radio was playing…" /><div className="mv-textarea-meta"><span id="mv-description-help">Start with the details you can still feel.</span><span>{description.length}/2000</span></div><p id="mv-description-error" className="mv-error" role="alert">{errors.description}</p></div>
-        <div className="mv-submit-panel"><div className="mv-submit-actions">{user && <button type="button" className="mv-save-button" disabled={saving || libraryBusy || accountBusy || !memorySave.dirty} onClick={memorySave.save}>{saving ? 'Saving…' : memorySave.dirty ? 'Save changes' : memorySave.saved ? 'Saved ✓' : 'Save changes'}</button>}<button className="mv-primary" type="submit">{pending ? 'Generating…' : scene ? 'Regenerate My Memory' : 'Generate My Memory'} <span aria-hidden="true">✧</span></button></div><p className="mv-fine">{user ? 'Use Save changes to store your inputs privately. Scene generation is still a demo.' : isMock ? 'Local demo · Inputs are not saved to a server.' : 'Your inputs will be sent for generation.'}</p></div>
+        <div className="mv-submit-panel"><div className="mv-submit-actions">{user && <button type="button" className="mv-save-button" disabled={saving || libraryBusy || accountBusy || !memorySave.dirty} onClick={memorySave.save}>{saving ? 'Saving…' : memorySave.dirty ? 'Save changes' : memorySave.saved ? 'Saved ✓' : 'Save changes'}</button>}<button className="mv-primary" type="submit">{pending ? 'Generating…' : scene ? 'Regenerate My Memory' : 'Generate My Memory'} <span aria-hidden="true">✧</span></button></div><p className="mv-fine">{user ? 'Use Save changes to store your inputs privately. Scene generation uses the configured AI backend.' : isMock ? 'Local demo · Inputs are not saved to a server.' : 'Your inputs will be sent for generation.'}</p></div>
       </fieldset></form>
       {user && <div className="mv-autosave mv-glass">
         <p role="status">{memorySave.status === 'saving' ? 'Saving to your account…' : memorySave.status === 'saved' ? '✓ All changes saved privately' : memorySave.status === 'error' ? 'Changes have not been saved.' : memorySave.dirty ? 'Unsaved changes · Select Save changes.' : 'Select Save changes when your memory is ready.'}</p>
         {memorySave.status === 'error' && <><p role="alert" className="mv-error">{memorySave.error}</p><button type="button" onClick={memorySave.save}>Retry saving</button></>}
         <p className="mv-fine">Photographs upload to private storage. Your story, mood, and scene data save to your database.</p>
       </div>}
+      <WorldGeneration user={user} file={file} description={description} onReady={world => { setGeneratedWorld(world); setWorldMode('generated'); setScreen('world') }} onExploreSample={() => { setWorldMode('sample'); setScreen('world') }} />
       </div>
       <div className="mv-preview-panel mv-glass" aria-label="Memory world preview">
-        <div className="mv-preview-header"><div><p className="mv-eyebrow">A SPACE TO STEP INTO</p><h2>Your memory world</h2></div><span className="mv-status">{pending ? 'PREPARING' : SceneRenderer ? 'DEMO 3D ROOM' : scene?.source === 'mock' ? 'MOCK SCENE' : scene ? 'SCENE READY' : 'AWAITING YOUR MEMORY'}</span></div>
-        {screen === 'upload' && (SceneRenderer ? <div className="mv-studio-demo"><div className="mv-demo-canvas" role="region" aria-label="Interactive predefined 3D room"><SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} /></div><div className="mv-demo-caption"><h2>A room to return to.</h2><p>Predefined 3D demo · Drag to orbit. Scroll or pinch to zoom.</p><p className="mv-fine">Your photograph and story do not change this room yet. Generation prepares mock scene data.</p></div></div> : <div className="mv-preview-empty"><Portal small /><h2>{scene ? 'Your next chapter starts here.' : 'Your world begins with a memory.'}</h2><p>Add a photograph and describe the moment on the left.</p><p className="mv-fine">3D renderer not connected · Scene integration area</p></div>)}
+        <div className="mv-preview-header"><div><p className="mv-eyebrow">A SPACE TO STEP INTO</p><h2>Your memory world</h2></div><span className="mv-status">{pending ? 'PREPARING' : worldLabel}</span></div>
+        <div className="mv-mode-picker" aria-label="World mode"><button type="button" aria-pressed={worldMode==='symbolic'} onClick={()=>setWorldMode('symbolic')}>Your symbolic scene</button><button type="button" aria-pressed={worldMode==='sample'} onClick={()=>setWorldMode('sample')}>Saved World Labs sample</button>{generatedWorld&&<button type="button" aria-pressed={worldMode==='generated'} onClick={()=>setWorldMode('generated')}>New generated world</button>}</div>
+        {worldMode==='generated' && generatedWorld?.thumbnailUrl && <img className="mv-generated-preview" src={generatedWorld.thumbnailUrl} alt="Preview of your newly generated World Labs world" />}
+        {screen === 'upload' && (SceneRenderer ? <div className="mv-studio-demo"><div className="mv-demo-canvas" role="region" aria-label="Interactive predefined 3D room"><SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} worldMode={worldMode} generatedWorld={generatedWorld} onMoodChange={value=>setMood(value[0].toUpperCase()+value.slice(1))} /></div><div className="mv-demo-caption"><h2>A room to return to.</h2><p>Symbolic preview · Drag to orbit. Scroll or pinch to zoom.</p><p className="mv-fine">Symbolic scenes assemble supported objects from your photograph’s analysis. Realistic World Labs generation uses the separate free-world action.</p></div></div> : <div className="mv-preview-empty"><Portal small /><h2>{scene ? 'Your next chapter starts here.' : 'Your world begins with a memory.'}</h2><p>Add a photograph and describe the moment on the left.</p><p className="mv-fine">3D renderer not connected · Scene integration area</p></div>)}
 
     {screen === 'generation' && <section className="mv-generation mv-enter" aria-busy={!failure}>
       <Portal small /><p className="mv-eyebrow">{isMock ? 'MOCK GENERATION / EXPERIENCE PREVIEW' : 'CREATING YOUR MEMORY'}</p>
@@ -208,9 +217,9 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     </section>}
 
     {screen === 'world' && <section className="mv-world mv-enter" aria-label="Memory world">
-      <div className="mv-scene-slot">{SceneRenderer ? <SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} /> : <div className="mv-scene-placeholder"><div className="mv-world-haze" />{imageUrl && <img className="mv-world-photo" src={imageUrl} alt="Your memory photograph, displayed as a preview" />}<div className="mv-scene-notice"><span className="mv-eyebrow">YOUR WORLD, WAITING TO COME ALIVE</span><h1 ref={heading} tabIndex={-1}>Stay a little <em>longer.</em></h1><p>Photograph preview · 3D renderer not connected</p><p className="mv-fine">This space is reserved for the interactive memory world.</p></div></div>}</div>
-      <div className="mv-world-top"><button className="mv-glass mv-back" onClick={backToUpload}>← Your memory</button><span className="mv-status">{SceneRenderer ? 'DEMO 3D ROOM' : scene?.source === 'mock' ? 'MOCK SCENE' : 'MEMORY WORLD'}</span></div>
-      <aside className="mv-memory-info mv-glass"><p className="mv-eyebrow">A MOMENT, HELD IN LIGHT</p><h2 ref={heading} tabIndex={-1}>{scene?.title || 'Your memory'}</h2><p>{description}</p>{SceneRenderer && <p className="mv-fine">Predefined demo room · Your uploaded memory does not change its geometry yet.</p>}</aside>
+      <div className="mv-scene-slot">{SceneRenderer ? <SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} worldMode={worldMode} generatedWorld={generatedWorld} onMoodChange={value=>setMood(value[0].toUpperCase()+value.slice(1))} /> : <div className="mv-scene-placeholder"><div className="mv-world-haze" />{imageUrl && <img className="mv-world-photo" src={imageUrl} alt="Your memory photograph, displayed as a preview" />}<div className="mv-scene-notice"><span className="mv-eyebrow">YOUR WORLD, WAITING TO COME ALIVE</span><h1 ref={heading} tabIndex={-1}>Stay a little <em>longer.</em></h1><p>Photograph preview · 3D renderer not connected</p><p className="mv-fine">This space is reserved for the interactive memory world.</p></div></div>}</div>
+      <div className="mv-world-top"><button className="mv-glass mv-back" onClick={backToUpload}>← Your memory</button><span className="mv-status">{worldLabel}</span></div>
+      <aside className="mv-memory-info mv-glass"><p className="mv-eyebrow">A MOMENT, HELD IN LIGHT</p><h2 ref={heading} tabIndex={-1}>{worldMode === 'sample' ? 'Saved bedroom sample' : worldMode === 'generated' ? 'Your generated world' : scene?.title || 'Your memory'}</h2><p>{description}</p>{SceneRenderer && <p className="mv-fine">{worldMode === 'generated' ? 'A new World Labs world from your photograph.' : worldMode === 'sample' ? 'Saved sample generated from a different photograph.' : 'AI symbolic scene; not a realistic reconstruction.'}</p>}</aside>
       <div className="mv-world-controls mv-glass"><fieldset className="mv-moods"><legend>SenseShift <span>Set the feeling</span></legend><div>{MOODS.map(value => <label key={value} className={mood === value ? 'mv-selected' : ''}><input type="radio" name="mv-mood" value={value} checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</div></fieldset><p className="mv-fine mv-controls-note">{SceneRenderer ? 'SenseShift adjusts the demo room’s ambient light. Audio is not connected. Drag to orbit; scroll or pinch to zoom.' : 'Mood changes the preview lighting. Interactive 3D and audio await integration.'}</p></div>
     </section>}
       </div></div>
