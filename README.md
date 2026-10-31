@@ -2,6 +2,8 @@
 
 **A memory you can walk back into — and feel again.**
 
+**Live demo:** <https://memoverse05.vercel.app>
+
 MemoVerse turns a written journal entry into a navigable 3D room, then helps you
 revisit it. Built for the *sensation* theme: the room you made from your words
 remembers its senses back.
@@ -19,7 +21,7 @@ interface never invents a smell or a sound the writer did not put there.
 - **Senses on** — seven synthesized Web Audio beds (rain, fire, wind, birds,
   waves, hum, music), optional haptics, and a warm/cool tint for temperature.
 - **Deterministic and free** — a lexicon in `backend/sensory.py`; no LLM, no
-  paid calls, fully offline.
+  paid calls, no external service.
 
 ### Try it without an account
 
@@ -29,7 +31,8 @@ interface never invents a smell or a sound the writer did not put there.
    **Senses on**.
 
 Read the full write-up, API contract and limitations in
-[docs/SENSORY_MEMORY.md](docs/SENSORY_MEMORY.md).
+[docs/SENSORY_MEMORY.md](docs/SENSORY_MEMORY.md), and the timed judge
+walkthrough in [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md).
 
 ## Stack
 
@@ -78,6 +81,7 @@ Vercel builds from the repository root: the frontend is built by
 ## Further reading
 
 - [docs/SENSORY_MEMORY.md](docs/SENSORY_MEMORY.md) — the sensation feature, end to end
+- [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) — the 2½-minute judge demo, timed
 - [docs/IMMERSIVE_EXPERIENCE.md](docs/IMMERSIVE_EXPERIENCE.md) — the immersive journal viewer
 - [docs/WORLD_LABS_VIEWER.md](docs/WORLD_LABS_VIEWER.md) — the splat viewer
 - [SCENE_SCHEMA.md](SCENE_SCHEMA.md) — the scene contract

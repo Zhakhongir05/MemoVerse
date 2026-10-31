@@ -88,7 +88,7 @@ WorldLabsViewer — evidence card, optional Web Audio + haptics, temperature tin
 
 - **Deterministic, not generative.** `backend/sensory.py` holds 22 lexicon
   entries of regex keywords. Same entry in, same cues out — no LLM, no paid
-  call, no network dependency in the demo.
+  call, and no external provider — the only request is our own endpoint.
 - **Quoted, not invented.** A cue cannot exist without a matching sentence, and
   the card always prints that sentence.
 - **Grounded in what the user wrote.** Cues come from the story and from memory
@@ -154,7 +154,7 @@ cd frontend && npm run build                                 # production build
 - The lexicon is English and keyword-based: it finds what the writer literally
   named. A remembered smell described without a keyword ("the kitchen after she
   left") produces no scent cue. That is the intended trade: no invention, no
-  provider cost, fully offline.
+  provider cost, and no external service.
 - Scent, temperature, texture and light are described and tinted; they are not
   emitted. Only sound is audible, and it is synthesized ambience, not a
   recording of the remembered place.
