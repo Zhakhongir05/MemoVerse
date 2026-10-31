@@ -139,6 +139,50 @@ export function fitEnhancementsToBounds(enhancements, bounds, margin = 0.15) {
 }
 
 /**
+ * The model proposes furniture "near the origin" without knowing the room, so
+ * its guesses collapse into a pile. Grow that relative arrangement around its
+ * own centroid until it covers part of the real floor rectangle, then clamp.
+ * Only scales up: an arrangement that already fits the room keeps its shape.
+ * User-adjusted placements (anchor 'none') are never moved.
+ */
+export function spreadEnhancementsInRoom(enhancements, bounds, { fill = 0.6, margin = 0.15 } = {}) {
+  if (!bounds || enhancements.length < 2) return enhancements
+  const movable = enhancements.filter((enhancement) => enhancement.anchor !== 'none')
+  if (movable.length < 2) return enhancements
+
+  const xs = movable.map((enhancement) => enhancement.position[0])
+  const zs = movable.map((enhancement) => enhancement.position[2])
+  const aiCx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const aiCz = (Math.min(...zs) + Math.max(...zs)) / 2
+  const lowX = bounds.min.x + margin
+  const highX = bounds.max.x - margin
+  const lowZ = bounds.min.z + margin
+  const highZ = bounds.max.z - margin
+  if (lowX >= highX || lowZ >= highZ) return enhancements
+  const roomCx = (lowX + highX) / 2
+  const roomCz = (lowZ + highZ) / 2
+  const spanX = Math.max(...xs) - Math.min(...xs)
+  const spanZ = Math.max(...zs) - Math.min(...zs)
+  const grow = (span, target) => (span > 0.01 ? Math.max(1, target / span) : 1)
+  const growX = grow(spanX, (highX - lowX) * fill)
+  const growZ = grow(spanZ, (highZ - lowZ) * fill)
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max)
+
+  const moved = new Map()
+  for (const enhancement of movable) {
+    moved.set(enhancement.id, [
+      clamp(roomCx + (enhancement.position[0] - aiCx) * growX, lowX, highX),
+      enhancement.position[1],
+      clamp(roomCz + (enhancement.position[2] - aiCz) * growZ, lowZ, highZ),
+    ])
+  }
+  return enhancements.map((enhancement) => (
+    moved.has(enhancement.id) ? { ...enhancement, position: moved.get(enhancement.id) } : enhancement
+  ))
+}
+
+
+/**
  * Demo payload hand-fitted to saved room 4fad570a…, in that world's raw asset
  * units (not meters). Positions are expected to need a final nudge with the
  * in-app calibration gizmo — that is what `confidence` communicates.
