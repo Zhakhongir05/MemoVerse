@@ -1,0 +1,188 @@
+import { ASSET_CATALOG, ENHANCEMENT_TYPES } from './catalog.js'
+
+/**
+ * Validates the backend enhancement payload before anything reaches the scene.
+ *
+ * Contract:
+ *   { worldId: string,
+ *     enhancements: [{ id, type, assetId, position:[x,y,z],
+ *                      rotation:[x,y,z] (radians), scale:[x,y,z]|number,
+ *                      anchor: 'floor'|'ceiling'|'none',
+ *                      confidence, memory }] }
+ *
+ * `position` is in the generated world's own asset units (the collider/scene
+ * frame, Y-up) — the same frame the splat viewer renders. `anchor` says which
+ * room surface the object rests on, so the client can ground it against the
+ * collider; 'none' means the payload is already final and must not be moved.
+ *
+ * `assetId` must name a catalog entry, and its `type` must match the catalog
+ * entry's type, so a backend cannot mount an arbitrary URL or the wrong mesh.
+ */
+export const ENHANCEMENT_CONTRACT_VERSION = 2
+
+const MAX_ENHANCEMENTS = 20
+const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+const ANCHORS = Object.freeze(['floor', 'ceiling', 'none'])
+// Objects that hang from a surface rather than rest on one.
+const DEFAULT_ANCHOR = Object.freeze({ pendant: 'ceiling' })
+
+function fail(message) {
+  throw new Error(`Invalid enhancement response: ${message}`)
+}
+
+function isVector(value) {
+  return Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === 'number' && Number.isFinite(n))
+}
+
+function readVector(value, name, check) {
+  if (!isVector(value)) fail(`${name} must be three finite numbers`)
+  if (!value.every(check)) fail(`${name} is outside the allowed range`)
+  return [value[0], value[1], value[2]]
+}
+
+function readText(value, name, max, { required = false } = {}) {
+  if (value === undefined || value === null) {
+    if (required) fail(`${name} is required`)
+    return ''
+  }
+  if (typeof value !== 'string') fail(`${name} must be text`)
+  if (value.length > max) fail(`${name} is too long`)
+  if (required && !value.trim()) fail(`${name} must not be empty`)
+  return value
+}
+
+function normalizeScale(scale) {
+  const vector = typeof scale === 'number' ? [scale, scale, scale] : scale
+  return readVector(vector, 'scale', (n) => n > 0.01 && n <= 20)
+}
+
+function readAnchor(value, type, index) {
+  if (value === undefined || value === null) return DEFAULT_ANCHOR[type] ?? 'floor'
+  if (!ANCHORS.includes(value)) {
+    fail(`enhancements[${index}].anchor must be one of ${ANCHORS.join(', ')}`)
+  }
+  return value
+}
+
+export function normalizeEnhancement(raw, index = 0) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) fail(`enhancements[${index}] must be an object`)
+
+  const id = readText(raw.id, `enhancements[${index}].id`, 64, { required: true })
+  if (!ID_PATTERN.test(id)) fail(`enhancements[${index}].id has invalid characters`)
+
+  if (!ENHANCEMENT_TYPES.includes(raw.type)) fail(`enhancements[${index}].type is not supported`)
+  if (typeof raw.assetId !== 'string' || !(raw.assetId in ASSET_CATALOG)) {
+    fail(`enhancements[${index}].assetId is not in the approved catalog`)
+  }
+  const asset = ASSET_CATALOG[raw.assetId]
+  if (asset.type !== raw.type) fail(`enhancements[${index}].assetId does not match its type`)
+
+  return {
+    id,
+    type: raw.type,
+    assetId: raw.assetId,
+    position: readVector(raw.position, `enhancements[${index}].position`, (n) => Math.abs(n) <= 1000),
+    // glTF convention, radians.
+    rotation: readVector(raw.rotation ?? [0, 0, 0], `enhancements[${index}].rotation`, (n) => Math.abs(n) <= Math.PI * 4),
+    scale: normalizeScale(raw.scale ?? 1),
+    anchor: readAnchor(raw.anchor, raw.type, index),
+    confidence: readText(raw.confidence, `enhancements[${index}].confidence`, 40) || 'requires-calibration',
+    memory: readText(raw.memory, `enhancements[${index}].memory`, 1000),
+  }
+}
+
+export function parseEnhancementResponse(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) fail('payload must be an object')
+  const worldId = readText(payload.worldId, 'worldId', 100, { required: true })
+  if (!Array.isArray(payload.enhancements)) fail('enhancements must be an array')
+  if (payload.enhancements.length > MAX_ENHANCEMENTS) fail('too many enhancements')
+
+  const enhancements = payload.enhancements.map(normalizeEnhancement)
+  const ids = new Set()
+  for (const enhancement of enhancements) {
+    if (ids.has(enhancement.id)) fail(`duplicate id "${enhancement.id}"`)
+    ids.add(enhancement.id)
+  }
+
+  return { worldId, enhancements }
+}
+
+/** Parses a response only if it belongs to the world currently mounted. */
+export function parseEnhancementsForWorld(payload, worldId) {
+  const parsed = parseEnhancementResponse(payload)
+  if (parsed.worldId !== worldId) {
+    fail(`response targets world ${parsed.worldId}, but ${worldId} is mounted`)
+  }
+  return parsed.enhancements
+}
+
+/**
+ * Demo payload hand-fitted to saved room 4fad570a…, in that world's raw asset
+ * units (not meters). Positions are expected to need a final nudge with the
+ * in-app calibration gizmo — that is what `confidence` communicates.
+ */
+export const DEMO_ENHANCEMENT_RESPONSE = Object.freeze({
+  worldId: '4fad570a-957c-43a7-b7c9-150945606413',
+  enhancements: [
+    {
+      id: 'bed-1',
+      type: 'bed',
+      assetId: 'bed-modern-01',
+      position: [-0.8, -0.3, -2.8],
+      rotation: [0, 0, 0],
+      scale: [0.65, 0.65, 0.65],
+      confidence: 'requires-calibration',
+      memory: 'I used to sleep here under the sloped ceiling, wrapped in the rose quilt.',
+    },
+    {
+      id: 'rug-1',
+      type: 'rug',
+      assetId: 'rug-feather-01',
+      position: [0.0, -0.297, -2.3],
+      rotation: [0, 0, 0],
+      scale: [0.75, 1, 0.75],
+      confidence: 'requires-calibration',
+      memory: 'The feather rug held the cold mornings.',
+    },
+    {
+      id: 'bookshelf-1',
+      type: 'bookshelf',
+      assetId: 'bookshelf-oak-01',
+      position: [1.15, -0.3, -3.0],
+      rotation: [0, -1.5708, 0],
+      scale: [0.55, 0.55, 0.55],
+      confidence: 'requires-calibration',
+      memory: 'Every book on these shelves marked a winter.',
+    },
+    {
+      id: 'armchair-1',
+      type: 'armchair',
+      assetId: 'armchair-ochre-01',
+      position: [0.6, -0.3, -1.95],
+      rotation: [0, -0.3, 0],
+      scale: [0.65, 0.65, 0.65],
+      confidence: 'requires-calibration',
+      memory: 'This chair by the window was where I read in the afternoon light.',
+    },
+    {
+      id: 'pendant-1',
+      type: 'pendant',
+      assetId: 'pendant-warm-01',
+      position: [0.0, 0.95, -2.3],
+      rotation: [0, 0, 0],
+      scale: [0.55, 0.55, 0.55],
+      confidence: 'requires-calibration',
+      memory: 'The little pendant stayed on until the last page.',
+    },
+    {
+      id: 'basket-1',
+      type: 'basket',
+      assetId: 'basket-woven-01',
+      position: [0.95, -0.3, -2.55],
+      rotation: [0, 0.4, 0],
+      scale: [0.5, 0.5, 0.5],
+      confidence: 'requires-calibration',
+      memory: 'We kept letters in these baskets, folded in ribbons.',
+    },
+  ],
+})
