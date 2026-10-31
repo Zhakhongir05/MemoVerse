@@ -54,3 +54,23 @@ test('one creation action prepares podcast, enters world automatically, headphon
  await page.setViewportSize({width:390,height:844});const panel=page.getByRole('complementary',{name:'Memory controls panel'});await expect(panel).toBeVisible();expect((await panel.boundingBox()).width).toBeLessThanOrEqual(390);await page.screenshot({path:'test-results/minimal-memory-mobile.png',animations:'disabled'});
  await page.getByRole('button',{name:'Close memory panel',exact:true}).click();await page.getByRole('button',{name:'← Back to memory',exact:true}).click();await page.getByRole('button',{name:'← Back to My Journal',exact:true}).click();await page.getByRole('button',{name:'Play memory podcast',exact:true}).click();await expect(page.getByRole('heading',{name:'Saved chapter 1'})).toBeVisible();await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);expect(creates).toBe(1);
 });
+
+test('older failed script has a direct creation action from journal without generating a world',async({page})=>{
+ let creates=0,steps=0;
+ const failed={id:'33333333-3333-4333-8333-333333333333',status:'failed',next_step:1,total_steps:5,script:null,audio:[]};
+ const tour=()=>({id:'44444444-4444-4444-8444-444444444444',status:steps===3?'ready':'pending',script:{version:4,chapters:[1,2,3].map(order=>({order,title:'Recovered chapter '+order,narration:'Your memory of watching for birds by the window.',anchor_id:null}))},audio:steps===3?[1,2,3].map(order=>({order,url:'http://127.0.0.1:5206/test-narration.wav',duration_seconds:60})):[]});
+ await page.route('**/test-narration.wav',r=>r.fulfill({body:wav(),contentType:'audio/wav'}));
+ await page.route('**/api/memorycast/**',r=>{
+  const q=r.request();
+  if(q.method()==='POST'&&q.url().includes('/memories/')){creates++;expect(q.postDataJSON().regenerate).toBe(true);return r.fulfill({status:202,json:{tour:tour()}})}
+  if(q.method()==='POST'){steps++;return r.fulfill({json:{tour:tour(),advanced:true}})}
+  return r.fulfill({json:{generation_enabled:true,stale:creates===0,tour:creates?tour():failed}});
+ });
+ await page.route('**/api/journal/*/world',()=>{throw Error('No world request needed to recover a journal podcast')});
+ await page.addInitScript(s=>localStorage.setItem('sb-127-auth-token',JSON.stringify(s)),sessionFor(TEST_USERS[0]));
+ await page.goto('/');await page.getByRole('button',{name:'Explore Memories',exact:true}).click();await page.getByRole('button',{name:'＋ New Memory',exact:true}).click();
+ await page.locator('#mj-title').fill('Stopped podcast recovery');await page.locator('#mj-story').fill('I remember looking for birds by the window.');await page.locator('#mj-photos').setInputFiles({name:'test.png',mimeType:'image/png',buffer:png});await page.getByRole('button',{name:'Save journal entry ↗',exact:true}).click();
+ await page.getByRole('button',{name:'← Back to My Journal',exact:true}).click();await page.getByRole('button',{name:'Play memory podcast',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Create podcast',exact:true})).toBeEnabled();expect(creates).toBe(0);
+ await page.getByRole('button',{name:'Create podcast',exact:true}).click();await expect(page.getByRole('heading',{name:'Recovered chapter 1'})).toBeVisible();await expect.poll(()=>page.locator('audio').evaluate(a=>a.currentTime)).toBeGreaterThan(.1);expect(creates).toBe(1);expect(steps).toBe(3);
+});
