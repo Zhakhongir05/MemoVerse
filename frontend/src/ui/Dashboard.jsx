@@ -4,6 +4,7 @@ import MemoryLibrary from './MemoryLibrary'
 import useMemorySave from './useMemorySave'
 import WorldGeneration from '../integration/WorldGeneration.jsx'
 import { generateStudioMemory } from '../integration/studioApi.js'
+import { sceneStatus } from '../integration/sceneResponse.js'
 
 const MOODS = ['Nostalgic', 'Joyful', 'Melancholic']
 const MAX_IMAGE = 4 * 1024 * 1024
@@ -47,6 +48,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState({})
   const [scene, setScene] = useState(null)
+  const [provenance, setProvenance] = useState(null)
   const [worldMode, setWorldMode] = useState('symbolic')
   const [generatedWorld, setGeneratedWorld] = useState(null)
   const [failure, setFailure] = useState('')
@@ -60,7 +62,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
   const heading = useRef(null)
   const isMock = generateMemory === generateMockMemory
   const pending = screen === 'generation' && !failure
-  const worldLabel = worldMode === 'generated' ? 'NEW GENERATED WORLD' : worldMode === 'sample' ? 'SAVED WORLD LABS SAMPLE' : scene ? 'AI SYMBOLIC SCENE' : 'SYMBOLIC PREVIEW'
+  const worldLabel = worldMode === 'generated' ? 'NEW GENERATED WORLD' : worldMode === 'sample' ? 'SAVED WORLD LABS SAMPLE' : scene ? provenance?.source === 'mock' ? 'SYMBOLIC DEMO' : provenance?.source === 'ai' ? 'AI SYMBOLIC SCENE' : 'SYMBOLIC SCENE' : 'SYMBOLIC PREVIEW'
   const draft = useMemo(() => ({ file, audioFile, description, mood, scene }), [file, audioFile, description, mood, scene])
   const memorySave = useMemorySave(user, draft)
   const saving = memorySave.status === 'saving'
@@ -109,6 +111,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
       if (request.signal.aborted) return
       if (!result || typeof result !== 'object') throw new Error('Invalid scene')
       setScene(result.scene || result)
+      setProvenance(result.source ? {source:result.source,fallback:result.fallback,reason:result.reason} : null)
       setWorldMode('symbolic')
       setScreen('world')
     } catch (error) {
@@ -131,6 +134,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
     setDescription(memory.description)
     setMood(MOODS.includes(memory.mood) ? memory.mood : 'Nostalgic')
     setScene(memory.scene)
+    setProvenance(null)
     setErrors({}); setFailure('')
     setInputsOpen(false)
     setScreen(memory.scene ? 'world' : 'upload')
@@ -140,7 +144,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
     if (saving || (memorySave.dirty && !window.confirm('Discard unsaved changes and start a new memory?'))) return
     controller.current?.abort()
     memorySave.newDraft()
-    setFile(null); setAudioFile(null); setDescription(''); setMood('Nostalgic'); setScene(null)
+    setFile(null); setAudioFile(null); setDescription(''); setMood('Nostalgic'); setScene(null); setProvenance(null)
     setErrors({}); setFailure(''); setScreen('upload')
   }
 
@@ -203,6 +207,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
       </div>
       <div className="mv-preview-panel mv-glass" aria-label="Memory world preview">
         <div className="mv-preview-header"><div><p className="mv-eyebrow">A SPACE TO STEP INTO</p><h2>Your memory world</h2></div><span className="mv-status">{pending ? 'PREPARING' : worldLabel}</span></div>
+        {provenance && worldMode==='symbolic' && <p role="status" className="mv-fine">{sceneStatus(provenance)}</p>}
         <div className="mv-mode-picker" aria-label="World mode"><button type="button" aria-pressed={worldMode==='symbolic'} onClick={()=>setWorldMode('symbolic')}>Your symbolic scene</button><button type="button" aria-pressed={worldMode==='sample'} onClick={()=>setWorldMode('sample')}>Saved World Labs sample</button>{generatedWorld&&<button type="button" aria-pressed={worldMode==='generated'} onClick={()=>setWorldMode('generated')}>New generated world</button>}</div>
         {worldMode==='generated' && generatedWorld?.thumbnailUrl && <img className="mv-generated-preview" src={generatedWorld.thumbnailUrl} alt="Preview of your newly generated World Labs world" />}
         {screen === 'upload' && (SceneRenderer ? <div className="mv-studio-demo"><div className="mv-demo-canvas" role="region" aria-label="Interactive predefined 3D room"><SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} worldMode={worldMode} generatedWorld={generatedWorld} onMoodChange={value=>setMood(value[0].toUpperCase()+value.slice(1))} /></div><div className="mv-demo-caption"><h2>A room to return to.</h2><p>Symbolic preview · Drag to orbit. Scroll or pinch to zoom.</p><p className="mv-fine">Symbolic scenes assemble supported objects from your photograph’s analysis. Realistic World Labs generation uses the separate free-world action.</p></div></div> : <div className="mv-preview-empty"><Portal small /><h2>{scene ? 'Your next chapter starts here.' : 'Your world begins with a memory.'}</h2><p>Add a photograph and describe the moment on the left.</p><p className="mv-fine">3D renderer not connected · Scene integration area</p></div>)}

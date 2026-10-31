@@ -3,10 +3,10 @@ import {supabase} from '../ui/supabaseClient.js';
 import {worldFetch,pollWorld} from './worldJobs.js';
 import {accountWorldClient} from './accountWorldClient.js';
 
-export default function WorldGeneration({user,file,description,onReady,onExploreSample}){
+export default function WorldGeneration({user,file,description,onReady,onExploreSample,autoStart=null}){
  const [config,setConfig]=useState(null),[allowance,setAllowance]=useState(null),[busy,setBusy]=useState(false);
  const [consent,setConsent]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
- const controller=useRef(null),version=useRef(0);
+ const controller=useRef(null),version=useRef(0),autoAttempt=useRef(null);
  const userId=user?.id;
  const account=useMemo(()=>userId&&supabase?accountWorldClient(userId,supabase):null,[userId]);
  useEffect(()=>{
@@ -24,8 +24,8 @@ export default function WorldGeneration({user,file,description,onReady,onExplore
   const state=await account.read('/api/world-account',{signal:request.signal});
   if(current===version.current&&!request.signal.aborted)setAllowance(state);
  }
- async function run(existing=null){
-  if(busy||!account||(!existing&&(!file||!description.trim()||!consent||!allowance?.remaining)))return;
+ async function run(existing=null,fromRelive=false){
+  if(busy||!account||(!existing&&(!file||!description.trim()||(!consent&&!fromRelive)||!allowance?.remaining)))return;
   if(!existing && (file.size>4*1024*1024 || description.trim().length>2000)){setError('For 3D generation choose a photograph up to 4 MB and a story up to 2,000 characters.');return;}
   const current=version.current,request=new AbortController();controller.current=request;setBusy(true);setError('');
   try{
@@ -49,6 +49,15 @@ export default function WorldGeneration({user,file,description,onReady,onExplore
    }
   }
  }
+ // The token originates only from the user's Relive button. Remember it before
+ // submitting so allowance/progress renders cannot create another charged job.
+ useEffect(()=>{
+  if(!autoStart || autoAttempt.current===autoStart || !config || !account || !allowance)return;
+  autoAttempt.current=autoStart;
+  if(!config.enabled){setError('Realistic generation is currently unavailable. Your photograph is saved; no symbolic scene has been substituted.');return;}
+  if(!allowance.remaining){setError('You have used your three free worlds. Revisit an existing world without another generation.');return;}
+  setConsent(true);void run(null,true);
+ },[autoStart,config,account,allowance]);
  return <section className="mv-glass mv-world-generation" aria-label="Realistic world experience">
   <h3>Realistic 3D world</h3>
   <p className="mv-fine">Your account includes 3 free world-generation requests during the judging period. Completed worlds can be revisited without using another allowance. Paid upgrades are not available.</p>

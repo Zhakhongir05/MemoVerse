@@ -19,9 +19,5 @@
       "source": "/health",
       "destination": "/api/index"
     }
-  ],
-  "env": {
-    "DEMO_MODE": "false",
-    "ALLOW_MOCK_FALLBACK": "false"
-  }
+  ]
 }

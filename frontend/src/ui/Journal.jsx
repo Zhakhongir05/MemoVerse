@@ -37,6 +37,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
   const [view, setView] = useState('journal')
+  const [generationRequest,setGenerationRequest]=useState(null)
   const [entries, setEntries] = useState([])
   const [selected, setSelected] = useState(null)
   const [draft, setDraft] = useState(emptyDraft)
@@ -267,10 +268,15 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
     {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
         <div className="mj-detail-media">{selected.photos.length ? <><Photo file={selected.photos[activePhoto]} alt={`${selected.title}, photograph ${activePhoto + 1}`} className="mj-detail-cover" /><div className="mj-thumbnails">{selected.photos.map((photo, index) => <button key={index} aria-label={`View photograph ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)}><Photo file={photo} alt="" /></button>)}</div></> : <div className="mj-detail-no-photo" aria-hidden="true">◈<span>A moment held in words</span></div>}
-          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>A world from your photograph. A story that brings you back.</p><button className="mj-primary" onClick={() => { setDemo(false); setView('prepare') }}>Relive My Memory ✧</button></div>
+          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
+            setDemo(false)
+            if(selected.world && WorldViewer){relive('free');return}
+            if(!user){onSignIn?.();return}
+            setGenerationRequest(crypto.randomUUID());setView('prepare')
+          }}>Relive My Memory ✧</button></div>
         </div></div></section>}
 
-    {view === 'prepare' && selected && <RelivePreparation key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} onPlans={() => setView('plans')} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
+    {view === 'prepare' && selected && <RelivePreparation generationRequest={generationRequest} key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} onPlans={() => setView('plans')} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
       let saved = await saveEntry(owner, { ...selected, world: { ...result.world, ...(result.tour ? { guidedTour: result.tour } : {}), ...(typeof result.story === 'string' ? { preparedStory: result.story } : {}) }, story: selected.story, scene: result.scene || selected.scene, syncState: user ? 'pending' : 'local' })
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }

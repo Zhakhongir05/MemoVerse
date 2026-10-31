@@ -75,7 +75,7 @@ test('existing Google login stays available to signed-out visitors',async({page}
  await page.goto('/');await page.getByRole('button',{name:'Explore Memories'}).click();await expect(page.getByRole('button',{name:'Continue with Google'})).toBeVisible();await expect(page.getByRole('button',{name:'Generate Realistic 3D World',exact:true})).toHaveCount(0);
 });
 
-test('journal shows the free plan and only generates after explicit consent',async({page,request})=>{
+test('Relive My Memory directly generates the photo world and revisits it for free',async({page,request})=>{
  await page.route('http://127.0.0.1:8036/rest/v1/journal_entries**',async route=>{
   if(route.request().method()==='GET')return route.fulfill({json:[]});
   const row=route.request().postDataJSON();return route.fulfill({json:row});
@@ -91,16 +91,16 @@ test('journal shows the free plan and only generates after explicit consent',asy
  await page.locator('#mj-story').fill('A quiet synthetic photograph, used only in our mocked browser test.');
  await page.locator('#mj-photos').setInputFiles({name:'journal.png',mimeType:'image/png',buffer:png});
  await page.getByRole('button',{name:'Save journal entry ↗',exact:true}).click();
- await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
- await expect(page.getByText('3 of 3 worlds remaining',{exact:true})).toBeVisible();
  expect((await stats(request)).submitted).toBe(before);
- await page.getByRole('checkbox',{name:'I agree to send this photograph and story to World Labs.'}).check();
- await page.getByRole('button',{name:'Generate Realistic 3D World',exact:true}).click();
+ await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
  await expect(page.getByRole('progressbar')).toBeVisible();
- await expect(page.getByRole('button',{name:'Explore Freely ↗',exact:true})).toBeVisible({timeout:30000});
- await page.getByRole('button',{name:'Explore Freely ↗',exact:true}).click();
+ await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toBeVisible({timeout:30000});
  await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toBeVisible();
  await expect(page.locator('canvas')).toBeVisible();
+ expect((await stats(request)).submitted).toBe(before+1);
+ await page.getByRole('button',{name:'← Back to memory',exact:true}).click();
+ await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
+ await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toBeVisible();
  expect((await stats(request)).submitted).toBe(before+1);
  await page.screenshot({path:test.info().outputPath('journal-free-plan-world.png')});
 });
@@ -136,4 +136,41 @@ test('guest journal and alternative 3D previews remain usable without generation
  await page.getByRole('button',{name:'Symbolic objects',exact:true}).click();
  await expect(page.locator('canvas')).toBeVisible();
  expect((await stats(request)).submitted).toBe(before);
+});
+
+test('a preview demo scene is explicitly labelled and never presented as real generation',async({page,request})=>{
+ await prepare(page,9);await inputs(page,'A synthetic symbolic scene provenance test.');
+ const before=(await stats(request)).submitted;
+ await page.getByRole('button',{name:'Generate My Memory',exact:false}).click();
+ await expect(page.getByText('Prepared demo scene (demo_mode); not generated from your upload.',{exact:true})).toBeVisible();
+ await expect(page.getByText('SYMBOLIC DEMO',{exact:true}).first()).toBeVisible();
+ expect((await stats(request)).submitted).toBe(before);
+});
+
+async function openJournalGeneration(page,index,story){
+ await page.route('http://127.0.0.1:8036/rest/v1/journal_entries**',route=>route.fulfill({json:route.request().method()==='GET'?[]:route.request().postDataJSON()}));
+ await page.route('http://127.0.0.1:8036/storage/v1/object/**',route=>route.fulfill({json:{Key:'synthetic-photo'}}));
+ await prepare(page,index);await page.getByRole('button',{name:'← Back to journal memory',exact:true}).click();
+ await page.getByRole('button',{name:'＋ New Memory',exact:true}).click();
+ await page.locator('#mj-title').fill('A Relive generation test');await page.locator('#mj-story').fill(story);
+ await page.locator('#mj-photos').setInputFiles({name:'relive.png',mimeType:'image/png',buffer:png});
+ await page.getByRole('button',{name:'Save journal entry ↗',exact:true}).click();
+}
+
+test('failed Relive generation shows an error without substituting a symbolic world',async({page})=>{
+ await openJournalGeneration(page,10,'A synthetic [fail] Relive test.');
+ await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
+ await expect(page.getByRole('alert').filter({hasText:'World generation failed'})).toBeVisible({timeout:30000});
+ await expect(page.getByRole('button',{name:'SenseShift',exact:true})).toHaveCount(0);
+ await expect(page.locator('canvas')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Use symbolic fallback',exact:true})).toBeVisible();
+});
+
+test('unavailable real generation does not silently open a sample or spend allowance',async({page,request})=>{
+ await page.route('**/api/world-config',route=>route.fulfill({json:{enabled:false,limit:3}}));
+ await openJournalGeneration(page,11,'A synthetic disabled-generation test.');
+ const before=(await stats(request)).submitted;
+ await page.getByRole('button',{name:'Relive My Memory ✧',exact:true}).click();
+ await expect(page.getByRole('alert').filter({hasText:'no symbolic scene has been substituted'})).toBeVisible();
+ await expect(page.locator('canvas')).toHaveCount(0);expect((await stats(request)).submitted).toBe(before);
 });

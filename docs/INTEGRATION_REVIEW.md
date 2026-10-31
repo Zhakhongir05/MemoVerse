@@ -1,6 +1,6 @@
 # MemoVerse-1 main integration — 2026-10-31
 
-Repository: https://github.com/sujamahat/MemoVerse-1 . Integration branch: integration/all-feature-branches, based on a02496b from this repository's main. Work in other local worktrees was left untouched.
+Repository: https://github.com/sujamahat/MemoVerse-1 . Integration branch: integration/all-feature-branches, initially based on a02496b from this repository's main. Work in other local worktrees was left untouched.
 
 ## Branches included
 
@@ -22,7 +22,7 @@ Keep the existing Supabase authentication/database, latest guest-login fix, jour
 
 Keep the sensory and grounded diorama renderers as clearly labelled alternatives; do not replace the World Labs viewer or weaken backend scene validation with an incompatible sensory schema. Preserve the seven strict symbolic object types and honest provenance/errors. Photo-depth previews are not labelled as true reconstruction.
 
-The newest frontend introduced another allowance/Edge Function implementation. Plans, photo information and generation controls now read one backend account ledger. Preparation requires explicit generation consent and never invokes a paid provider merely by opening a journal entry. The old Edge Function is a no-charge 410 compatibility response, preventing independent allowances/providers. Historical legacy usage is retained by migration 009 rather than reset. The paid pack remains a local mock checkout: no real payment, allowance grant or provider job occurs after simulated success.
+The newest frontend introduced another allowance/Edge Function implementation. Plans, photo information and generation controls now read one backend account ledger. The detail page explains the photo transfer and allowance cost. The user’s Relive My Memory action starts a real job and opens its generated world when complete; simply browsing a journal entry does not submit. Saved worlds reopen without submission. Errors, disabled generation and exhausted allowance never silently select the symbolic fallback. The old Edge Function is a no-charge 410 compatibility response, preventing independent allowances/providers. Historical legacy usage is retained by migration 009 rather than reset. The paid pack remains a local mock checkout: no real payment, allowance grant or provider job occurs after simulated success.
 
 ## Database and deployment prerequisites
 
@@ -45,3 +45,7 @@ The unsupported npm cache-dir value originates from build environment configurat
 Remaining operational limits: the database/configuration and a separately approved controlled provider test are required before claiming live generation. Mock checkout is not a real paid plan. Browser tests validate UI/contracts with synthetic assets, not production reconstruction quality.
 
 Final production-build browser result: **9 passed**. Includes new generation/progress/assets, resume, exhausted free revisits, account switching, failed-job retention/sample loading, Google login, journal consent, mock paid checkout with unchanged real allowance, guest navigation and both alternative 3D renderers.
+
+Concurrent main commit b29df25 was incorporated before release. Its complete pinned Python requirements and API entrypoint/health routes are retained. Preview/production demo flags remain scoped environment settings instead of global overrides; demo scene responses are explicitly labelled. The API entrypoint health smoke test passed without provider calls.
+
+Final validation after the direct-Relive change: **12 production-build browser tests passed**, including real-job initiation from Relive, automatically opening its generated viewer, free reopening, explicit failure/disabled behavior with zero symbolic substitution, and honest preview-demo labels. Backend 52, frontend unit 74, database 14 and contract 12 checks remain passing; production build and hosted API health smoke pass. No real provider, payment, database application or manual deployment call was made.
