@@ -308,6 +308,21 @@ class Routes(unittest.TestCase):
                 self.provider.timeout=mode=='timeout';self.provider.invalid=mode=='invalid';self.store.fail_upload=mode=='upload'
                 result=self.step(id).json()['tour'];self.assertIn(result['status'],('failed','uncertain'));count=len(self.provider.calls)
                 self.step(id);self.assertEqual(len(self.provider.calls),count)
+    def test_hung_writer_still_finishes_the_podcast_from_the_saved_words(self):
+        async def hang(context):
+            self.provider.calls.append('script')
+            await asyncio.sleep(5)
+        self.provider.script=hang
+        with patch('backend.memorycast.SCRIPT_STEP_SECONDS',0.05):
+            id=self.create().json()['tour']['id']
+            scripted=self.step(id).json()['tour']
+        self.assertEqual(scripted['status'],'pending')
+        self.assertEqual([c['order'] for c in scripted['script']['chapters']],[1,2,3])
+        for chapter in scripted['script']['chapters']:
+            for evidence in chapter['evidence']:
+                self.assertIn(evidence['quote'],self.store.jobs[id]['context']['sources'][evidence['source_id']])
+        for _ in range(3):self.step(id)
+        self.assertEqual(self.store.jobs[id]['status'],'ready')
     def test_ready_replay_still_works_with_generation_disabled(self):
         self.ready();os.environ['MEMORYCAST_LIVE_ENABLED']='false';result=self.load();self.assertEqual(result.status_code,200);self.assertFalse(result.json()['generation_enabled']);self.assertEqual(len(self.provider.calls),4)
     def test_corrupt_cross_account_storage_path_is_never_signed(self):

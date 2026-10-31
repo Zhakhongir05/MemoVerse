@@ -14,6 +14,9 @@ from .memorycast_provider import TourProvider,audio_duration
 from .memorycast_schema import TourRequest,context_for,fingerprint
 
 router=APIRouter(prefix='/api/memorycast',tags=['MemoryCast'])
+# The script step's whole budget. The writer's own provider calls finish well
+# inside it, and a writer that still runs long is replaced by a verbatim reading.
+SCRIPT_STEP_SECONDS=36
 
 def enabled():
     if os.getenv('MEMORYCAST_LIVE_ENABLED','false').lower()!='true':raise HTTPException(503,'New MemoryCast narration is disabled. Saved tours can still be replayed.')
@@ -93,7 +96,14 @@ async def perform_step(tour,store,provider):
         context['sources']['photo:'+str(step+1)]=text
         update={'context':context,'message':'Photograph observations saved.'}
     elif step==len(photos):
-        script=await asyncio.wait_for(provider.script(context),36)
+        try:
+            script=await asyncio.wait_for(provider.script(context),SCRIPT_STEP_SECONDS)
+        except (asyncio.TimeoutError,httpx.TimeoutException,APITimeoutError):
+            # A writer that runs past the step budget must not strand the tour.
+            # Reading the saved words back costs nothing and cannot invent one.
+            logging.getLogger(__name__).warning('memorycast_script_timeout memory=%s',context['memory_id'])
+            from .memorycast_schema import verbatim_tour
+            script=verbatim_tour(context)
         update={'script':script,'message':'Personalized three-chapter script saved.'}
     else:
         index=step-len(photos)-1
