@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { TransformControls } from '@react-three/drei'
-import { Raycaster, Vector3 } from 'three'
+import { BoxGeometry, EdgesGeometry, Raycaster, Vector3 } from 'three'
 
 import { ASSET_CATALOG } from './catalog.js'
+
+// The outline must never swallow pointer events; the hit box owns those.
+const NO_RAYCAST = () => null
 
 /**
  * Finds the room surface an object should rest on, in scene units. A downward
@@ -46,6 +49,11 @@ function EnhancementBox({
   const group = useRef(null)
   const snappedFor = useRef(null)
   const [hovered, setHovered] = useState(false)
+
+  // Box wireframes include each face's triangle diagonals, which reads as a
+  // cross; draw the twelve real edges instead.
+  const outline = useMemo(() => new EdgesGeometry(new BoxGeometry(width, height, depth)), [width, height, depth])
+  useEffect(() => () => outline.dispose(), [outline])
 
   useEffect(() => {
     document.body.style.cursor = hovered && !calibrating ? 'pointer' : ''
@@ -112,10 +120,9 @@ function EnhancementBox({
           <meshBasicMaterial visible={false} />
         </mesh>
         {revealed && (
-          <mesh position={center} renderOrder={2} raycast={() => null}>
-            <boxGeometry args={[width, height, depth]} />
-            <meshBasicMaterial color={selected ? '#ffcf8a' : '#e8d3b0'} wireframe transparent opacity={selected ? 0.85 : 0.5} depthWrite={false} depthTest={false} />
-          </mesh>
+          <lineSegments position={center} geometry={outline} renderOrder={2} raycast={NO_RAYCAST}>
+            <lineBasicMaterial color={selected ? '#ffcf8a' : '#e8d3b0'} transparent opacity={selected ? 0.9 : 0.55} depthWrite={false} depthTest={false} />
+          </lineSegments>
         )}
       </group>
 
