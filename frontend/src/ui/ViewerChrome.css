@@ -1,0 +1,6 @@
+/* The app owns its journal/editor and toolbar. Hide duplicate legacy DOM panels
+   from the embedded viewer without changing splats, furniture, or camera code. */
+.mv-clean-viewer{width:100%;height:100%;position:relative}
+.mv-clean-viewer .world-tools,
+.mv-clean-viewer .sense-controls,
+.mv-clean-viewer .enhancement-panel{display:none!important}

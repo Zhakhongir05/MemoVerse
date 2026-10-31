@@ -1,32 +1,15 @@
-import React from 'react'
-import { Canvas } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import WorldLabsViewer from '../integration/WorldLabsViewer.jsx'
+import './scene.css'
 
-// This acts as a stand-in for your nostalgic objects until the AI pipeline is ready
-const PlaceholderMemory = () => {
-  return (
-    <mesh onClick={(e) => console.log('3D Object Clicked! Trigger AI agent.')}>
-      <boxGeometry args={[2, 2, 2]} />
-      <meshStandardMaterial color="hotpink" />
-    </mesh>
-  )
-}
-
-export default function Scene() {
-  return (
-    // The Canvas must have a defined height/width to render properly
-    <div style={{ width: '100vw', height: '100vh' }}>
-      <Canvas camera={{ position: [0, 2, 5], fov: 50 }}>
-        {/* Environment Lighting */}
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} />
-        
-        {/* Camera Controls */}
-        <OrbitControls makeDefault />
-        
-        {/* The 3D Assets */}
-        <PlaceholderMemory />
-      </Canvas>
-    </div>
-  )
+/**
+ * Adapter between the Dashboard's optional SceneRenderer slot and the hybrid
+ * World Labs scene. ScenePreview discovers this file with import.meta.glob and
+ * renders it with { scene, imageUrl, mood }. The World Labs world itself is
+ * pinned until the generation API is wired, but the uploaded photograph is
+ * forwarded so the backend can derive overlays for this memory.
+ */
+export default function Scene({ mood, imageUrl, scene }) {
+  return <div className="mv-hybrid-scene">
+    <WorldLabsViewer mood={mood} imageUrl={imageUrl} scene={scene} />
+  </div>
 }

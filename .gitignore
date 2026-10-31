@@ -1,8 +1,11 @@
 node_modules/
 __pycache__/
 .env
-*.glb
-.DS_Store
-.venv/
 .env.*
 !.env.example
+ai-env.ps1
+*.glb
+# The approved enhancement catalog assets are reviewed code, not generated output.
+!frontend/public/models/*.glb
+.DS_Store
+.venv/

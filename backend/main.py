@@ -36,7 +36,7 @@ class BodyLimitMiddleware:
     def __init__(self, app):
         self.app = app
     async def __call__(self, scope, receive, send):
-        if scope['type'] != 'http' or scope.get('path') != '/api/generate-scene':
+        if scope['type'] != 'http' or scope.get('path') not in ('/api/generate-scene', '/api/generate-enhancements'):
             return await self.app(scope, receive, send)
         limit = MAX_PHOTO_BYTES + 64 * 1024
         body = bytearray()
@@ -144,3 +144,9 @@ async def generate_scene(story: str = Form(...), photo: UploadFile = File(...), 
         return await pipeline.generate(story, data, mime)
     finally:
         await photo.close()
+
+try:
+    from .enhancements import router as enhancement_router
+except ImportError:
+    from backend.enhancements import router as enhancement_router
+app.include_router(enhancement_router)
