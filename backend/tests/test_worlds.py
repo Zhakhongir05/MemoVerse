@@ -28,6 +28,7 @@ class FakeAccounts:
     async def rpc(self,name,p):
         self.calls.append((name,copy.deepcopy(p)));owner=p.get('p_user_id')
         jobs=[j for j in self.jobs.values() if j['owner']==owner]
+        if name=='mv_world_binding':return {}
         if name=='mv_world_config':return {'enabled':True,'limit':3,'expires_at':'2026-11-30T00:00:00Z'}
         if name=='mv_world_account':return {'limit':3,'used':len(jobs),'remaining':3-len(jobs),'jobs':[self.public(j) for j in jobs]}
         if name=='mv_world_reserve':

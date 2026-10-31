@@ -26,6 +26,7 @@ class SupabaseWorlds:
     async def user(self,token):
         result=await self.request('/auth/v1/user',token=token)
         if not isinstance(result,dict):raise unavailable()
+        self.profile=result
         try:
             if result.get('is_anonymous') is True:raise ValueError()
             return str(UUID(result['id']))
@@ -34,7 +35,7 @@ class SupabaseWorlds:
         result=await self.request('/rest/v1/rpc/'+name,body=params)
         if not isinstance(result,dict):raise unavailable()
         if result.get('error'):
-            code=result['error'];status={'not_found':404,'disabled':503,'unconfigured':503,'ended':410}.get(code,429)
+            code=result['error'];status={'not_found':404,'disabled':503,'unconfigured':503,'ended':410,'conflict':409,'invalid':422}.get(code,429)
             # Messages originate only in our SQL functions, never raw PostgREST errors.
             raise HTTPException(status,result.get('message','World generation is unavailable.'))
         return result
@@ -45,3 +46,9 @@ async def authenticated_user(authorization: str=Header(default=''),accounts=Depe
     if not authorization.startswith('Bearer ') or not 1<len(authorization[7:])<=8192:
         raise HTTPException(401,'Sign in with your existing account to create a world.')
     return await accounts.user(authorization[7:])
+
+async def authenticated_journal_user(authorization: str=Header(default=''),accounts=Depends(get_accounts)):
+    user_id=await authenticated_user(authorization,accounts)
+    if not any(i.get('provider')=='google' for i in getattr(accounts,'profile',{}).get('identities',[])):
+        raise HTTPException(401,'Use your existing Google sign-in for saved memory worlds.')
+    return user_id

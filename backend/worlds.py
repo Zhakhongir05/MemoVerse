@@ -102,8 +102,7 @@ async def create_job(story: str=Form(...),photo: UploadFile=File(...),approved: 
         return await accounts.rpc('mv_world_finish',{'p_user_id':user_id,'p_job_id':job['job_id'],'p_lease':None,'p_update':updates})
     finally:await photo.close()
 
-@router.get('/api/world-jobs/{job_id}')
-async def get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depends(get_accounts)):
+async def get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depends(get_accounts), journal=False):
     from uuid import UUID
     try:job_id=str(UUID(job_id))
     except ValueError:raise HTTPException(404,'World not found for this account.') from None
@@ -113,9 +112,17 @@ async def get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depen
     if not claim['poll']:return job
     updates={'status':'pending','message':'World Labs is creating your world…'}
     try:
+        if journal and (job.get('world') or {}).get('id'):
+            world_id=job['world']['id']
+            if not isinstance(world_id,str) or not re.fullmatch(r'[A-Za-z0-9-]{1,128}',world_id):raise ValueError()
+            recovered=await provider('GET','worlds/'+world_id)
+            recovered=recovered.get('world',recovered)
+            from .world_archive import archive_world
+            archived=await archive_world(accounts,user_id,job_id,world_result(recovered))
+            return await accounts.rpc('mv_world_finish',{'p_user_id':user_id,'p_job_id':job_id,'p_lease':lease,'p_update':{'status':'succeeded','world':archived,'world_id':world_id,'message':'Your saved world is ready.'}})
         expires=job.get('expires_at')
         deadline=provider_datetime(expires) if expires else provider_datetime(job.get('created',datetime.now(timezone.utc).isoformat()))+timedelta(hours=1)
-        if deadline<=datetime.now(timezone.utc):
+        if not journal and deadline<=datetime.now(timezone.utc):
             updates={'status':'expired','message':'This world job expired. No automatic charged retry.'}
         else:
             operation=await provider('GET','operations/'+claim['operation_id'])
@@ -126,8 +133,25 @@ async def get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depen
                     world_id=world.get('world_id') or (operation.get('metadata') or {}).get('world_id')
                     if not isinstance(world_id,str) or not re.fullmatch(r'[A-Za-z0-9-]{1,128}',world_id):raise ValueError()
                     world=await provider('GET','worlds/'+world_id);world=world.get('world',world)
-                assets=world_result(world);updates={'status':'succeeded','world':assets,'world_id':assets['id'],'message':'Your new world is ready.'}
+                assets=world_result(world)
+                if journal:
+                    from .world_archive import archive_world
+                    assets=await archive_world(accounts,user_id,job_id,assets)
+                updates={'status':'succeeded','world':assets,'world_id':assets['id'],'message':'Your new world is ready.'}
+    except httpx.HTTPError:
+        updates={'status':'pending','message':'Private asset transfer will resume. No new generation is needed.'}
     except HTTPException as error:
         updates={'status':'expired','message':'This world expired. No automatic charged retry.'} if error.status_code==410 else {'status':'pending','message':'Progress is temporarily unavailable. Resume this existing job shortly.'}
     except (ValueError,TypeError,KeyError,AttributeError):updates={'status':'failed','message':'World Labs returned an invalid result. No automatic charged retry.'}
     return await accounts.rpc('mv_world_finish',{'p_user_id':user_id,'p_job_id':job_id,'p_lease':lease,'p_update':updates})
+
+@router.get('/api/world-jobs/{job_id}')
+async def legacy_get_job(job_id: str,user_id=Depends(authenticated_user),accounts=Depends(get_accounts)):
+    try:job_id=str(__import__('uuid').UUID(job_id))
+    except ValueError:raise HTTPException(404,'World not found for this account.') from None
+    binding=await accounts.rpc('mv_world_binding',{'p_user_id':user_id,'p_job_id':job_id})
+    if binding.get('memory_id'):
+        from .journal_worlds import public_job
+        job=await accounts.rpc('mv_journal_world',{'p_user_id':user_id,'p_memory_id':binding['memory_id']})
+        return await public_job(accounts,user_id,job)
+    return await get_job(job_id,user_id,accounts)
