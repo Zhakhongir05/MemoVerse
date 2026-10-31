@@ -229,7 +229,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
   return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''}`}>
     <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◈</span> MemoVerse<span>.</span></button>
-      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button>{LegacyStudio && <button onClick={() => navigate('studio')}>Memory Studio</button>}</nav>
+      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>
       <div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
         if (!canLeave()) return
         setAccountBusy(true)
