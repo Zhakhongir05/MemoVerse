@@ -1,5 +1,6 @@
 """Additive furniture manifest. Photo proposals never establish world geometry."""
 import json
+import logging
 import math
 import re
 from pathlib import Path
@@ -7,8 +8,8 @@ from typing import Annotated, List, Literal, Optional, Tuple
 from fastapi import APIRouter, Request, Form, File, UploadFile, HTTPException
 from pydantic import Field, StringConstraints, field_validator, model_validator
 from starlette.concurrency import run_in_threadpool
-from .schemas import ContractModel, PhotoAnalysis, clamp_normalized_point
-from .agent import VISION_PROMPT, parse_completion, PipelineFailure
+from .schemas import ContractModel, PhotoAnalysis, VisibleObject, clamp_normalized_point
+from .agent import VISION_PROMPT, PipelineFailure
 import base64
 import asyncio
 
@@ -172,6 +173,57 @@ FURNITURE_VISION_PROMPT = (VISION_PROMPT +
     ' where x runs from the left edge (0) to the right edge (1) and y from the top edge (0)'
     ' to the bottom edge (1), measured at the centre of the object. Approximate values are expected.')
 
+
+def completion_payload(result):
+    """Returns the decoded JSON object, rejecting truncated, refused or oversized replies."""
+    try:
+        choice=result.choices[0]
+        content,finished,refused=choice.message.content,choice.finish_reason,getattr(choice.message,'refusal',None)
+    except (AttributeError,IndexError,TypeError):
+        raise PipelineFailure('invalid_model_output') from None
+    if finished!='stop' or refused:raise PipelineFailure('invalid_model_output')
+    if not isinstance(content,str) or not content.strip() or len(content.encode('utf-8'))>32768:
+        raise PipelineFailure('invalid_model_output')
+    try:data=json.loads(content)
+    except (ValueError,TypeError):raise PipelineFailure('invalid_model_output') from None
+    if not isinstance(data,dict):raise PipelineFailure('invalid_model_output')
+    return data
+
+
+def _text(value,fallback):
+    return value.strip() if isinstance(value,str) and value.strip() else fallback
+
+
+def parse_photo_analysis(result,limit=20):
+    """One unusable observation must not discard the whole scene description."""
+    data=completion_payload(result)
+    raw=data.get('objects')
+    objects=[]
+    for item in raw if isinstance(raw,list) else []:
+        try:objects.append(VisibleObject.model_validate(item))
+        except ValueError:continue
+    colors=[c.strip() for c in data.get('colors') if isinstance(c,str) and c.strip() and len(c.strip())<=80] if isinstance(data.get('colors'),list) else []
+    try:
+        return PhotoAnalysis(objects=objects[:limit],
+            spatial_layout=_text(data.get('spatial_layout'),'Layout not stated'),
+            lighting=_text(data.get('lighting'),'Lighting not stated'),colors=colors[:10],
+            uncertainty=_text(data.get('uncertainty'),'Layout is approximate'))
+    except ValueError:raise PipelineFailure('invalid_model_output') from None
+
+
+def parse_plan(result,limit=20):
+    """Keeps every individually valid placement; only an all-invalid reply fails."""
+    data=completion_payload(result)
+    raw=data.get('enhancements')
+    if not isinstance(raw,list):raise PipelineFailure('invalid_model_output')
+    kept={}
+    for item in raw:
+        try:placement=Enhancement.model_validate(item)
+        except ValueError:continue
+        kept.setdefault(placement.id,placement)
+    if raw and not kept:raise PipelineFailure('invalid_model_output')
+    return Plan(enhancements=list(kept.values())[:limit])
+
 @router.post('/api/generate-enhancements',response_model=EnhancementManifest,response_model_exclude_none=True)
 async def generate_enhancements(request: Request, context: str=Form(...,max_length=40000),photo: Optional[UploadFile]=File(None)):
     from .main import validate_photo, MAX_PHOTO_BYTES
@@ -195,7 +247,7 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
             vision=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':FURNITURE_VISION_PROMPT},{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:'+image+';base64,'+base64.b64encode(data).decode(),'detail':'low'}}]}],
                 response_format={'type':'json_object'},max_completion_tokens=1800,temperature=0,timeout=20)
-            observations=parse_completion(vision,PhotoAnalysis)
+            observations=parse_photo_analysis(vision)
             prompt=('Select visible furniture and map each item to the closest asset in this exact assetId:type catalog: '+json.dumps(CATALOG)+
                 '. Return JSON matching '+json.dumps(Plan.model_json_schema())+
                 '. Photo relationships are not metric 3D evidence. Propose approximate Y-up render-frame transforms only, '
@@ -212,9 +264,10 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
             plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
                 response_format={'type':'json_object'},max_completion_tokens=4000,temperature=0,timeout=30)
-            return parse_completion(plan,Plan)
+            return parse_plan(plan)
         result=await asyncio.wait_for(live(),55)
         return manifest(ctx,result.enhancements,'ai')
-    except Exception:
+    except Exception as error:
         # No raw model output, stories, image bytes or credentials in errors/logs.
+        logging.getLogger(__name__).warning('furniture_generation_failed type=%s',type(error).__name__)
         return manifest(ctx,[],'demo',True)

@@ -132,6 +132,25 @@ class EnhancementTests(unittest.TestCase):
             memory=r.json()['enhancements'][0]['memory']
             self.assertEqual(memory,'');self.assertIsNone(PERSON_TERMS.search(memory))
 
+    def test_one_unusable_proposal_does_not_discard_the_rest(self):
+        # A single unmappable object (or an oversized list) used to fail the whole
+        # reply and silently fall back to no furniture.
+        good=item()
+        analysis=dict(objects=[{'description':f'Object {n}','location':'Floor','photoPosition':[.5,.5]} for n in range(25)],
+            spatial_layout='',lighting='',colors=['white']*12,uncertainty='')
+        plan={'enhancements':[good,{**item(),'id':'bad-1','assetId':'curtain-01'},{**item(),'id':'bad-2','position':[0,0]}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual([e['id'] for e in r.json()['enhancements']],['bed-1'])
+            observed=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])['photo_analysis']
+            self.assertEqual(len(observed['objects']),20)
+            self.assertEqual(observed['spatial_layout'],'Layout not stated')
+
     def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
         analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
         bed=item();chair={**item(),'id':'chair-1','type':'chair','assetId':'chair-modern-01'}
