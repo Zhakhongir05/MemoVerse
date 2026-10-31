@@ -151,6 +151,35 @@ class EnhancementTests(unittest.TestCase):
             self.assertEqual(len(observed['objects']),20)
             self.assertEqual(observed['spatial_layout'],'Layout not stated')
 
+    def test_truncated_vision_reply_is_retried_once(self):
+        truncated=SimpleNamespace(choices=[SimpleNamespace(finish_reason='length',message=SimpleNamespace(content='{"objects": [',refusal=None))])
+        analysis=dict(objects=[],spatial_layout='A desk beside a window',lighting='Bright',colors=['white'],uncertainty='Approximate')
+        plan={'enhancements':[item()]}
+        create=AsyncMock(side_effect=[truncated,completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual(create.await_count,3)
+            self.assertEqual(create.await_args_list[0].kwargs['max_completion_tokens'],2600)
+            self.assertEqual(create.await_args_list[1].kwargs['max_completion_tokens'],4000)
+
+    def test_truncated_plan_is_retried_once(self):
+        truncated=SimpleNamespace(choices=[SimpleNamespace(finish_reason='length',message=SimpleNamespace(content='{"enhancements": [',refusal=None))])
+        analysis=dict(objects=[],spatial_layout='A desk beside a window',lighting='Bright',colors=['white'],uncertainty='Approximate')
+        create=AsyncMock(side_effect=[completion(analysis),truncated,completion({'enhancements':[item()]})])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual(create.await_count,3)
+            self.assertEqual(create.await_args_list[1].kwargs['max_completion_tokens'],4000)
+            self.assertEqual(create.await_args_list[2].kwargs['max_completion_tokens'],6000)
+
     def test_everyday_names_map_onto_approved_assets(self):
         # The planner names furniture the way a person would; those names must
         # render as an approved mesh instead of being dropped.

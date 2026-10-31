@@ -299,5 +299,6 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
    <p className="local-note">Save placements and anchor stories with the account save button. New photo/audio anchor attachments stay in this tab. Saved worlds reopen without AI generation.</p>
   </details>}
+  {!showTools && (selectedEnhancementData || selectedAnchor) && <article className="world-memory-card" aria-label="Object memory"><button aria-label="Close object memory" onClick={()=>{setSelected(null);setSelectedEnhancement(null)}}>×</button><h3>{selectedEnhancementData ? ASSET_CATALOG[selectedEnhancementData.assetId]?.label || selectedEnhancementData.type : 'Your memory'}</h3><p>{selectedEnhancementData?.memory || selectedAnchor?.memory || 'No story attached yet.'}</p>{selectedAnchor?.photo && <img src={selectedAnchor.photo} alt="Memory photograph" />}</article>}
  </div></Boundary>;
 }

@@ -14,9 +14,9 @@ export default function WorldAllowance({user}) {
   return()=>controller.abort();
  },[account]);
  return <aside className="mj-plan-banner" aria-label="Your generation plan">
-  <strong>Judging demo · Free plan</strong>
+  <strong>Free account</strong>
   <span>{!account?'Sign in to use 3 free image-to-3D generations.':state?`${state.remaining} of 3 worlds remaining`:'Checking your world allowance…'}</span>
-  <p>Three World Labs generation requests per account during the judging period. Revisit completed worlds without using another allowance. Paid upgrades are not available.</p>
+
   {state?.remaining===0&&<p>You’ve used your free worlds. Your existing worlds are still yours to revisit.</p>}
   {error&&<p role="status">Your allowance is temporarily unavailable. {error}</p>}
  </aside>;

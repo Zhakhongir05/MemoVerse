@@ -174,7 +174,8 @@ router=APIRouter()
 FURNITURE_VISION_PROMPT = (VISION_PROMPT +
     ' For every visible furniture item or fixed room fixture, also report photoPosition as [x, y],'
     ' where x runs from the left edge (0) to the right edge (1) and y from the top edge (0)'
-    ' to the bottom edge (1), measured at the centre of the object. Approximate values are expected.')
+    ' to the bottom edge (1), measured at the centre of the object. Approximate values are expected.'
+    ' Report at most 20 objects, each described in fewer than 140 characters.')
 
 
 def completion_payload(result):
@@ -274,9 +275,7 @@ def parse_plan(result,limit=20,stats=None):
     data=completion_payload(result)
     raw=data.get('enhancements')
     if not isinstance(raw,list):raise PipelineFailure('invalid_model_output')
-    if stats is not None:
-        stats['plan_raw']=len(raw)
-        stats['plan_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
+    if stats is not None:stats['plan_raw']=len(raw)
     kept={}
     for item in raw:
         try:placement=Enhancement.model_validate(canonical_placement(item))
@@ -306,11 +305,18 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
     if not image:raise HTTPException(422,'A photograph is required for AI proposals')
     stats={}
     try:
-        async def live():
+        async def observe(tokens):
             vision=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
                 messages=[{'role':'system','content':FURNITURE_VISION_PROMPT},{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:'+image+';base64,'+base64.b64encode(data).decode(),'detail':'low'}}]}],
-                response_format={'type':'json_object'},max_completion_tokens=1800,temperature=0,timeout=20)
-            observations=parse_photo_analysis(vision,stats=stats)
+                response_format={'type':'json_object'},max_completion_tokens=tokens,temperature=0,timeout=20)
+            return parse_photo_analysis(vision,stats=stats)
+
+        async def live():
+            try: observations=await observe(2600)
+            except PipelineFailure:
+                # A dense photograph can exhaust the token budget mid-JSON; one
+                # longer retry is cheaper than losing the photograph entirely.
+                observations=await observe(4000)
             prompt=('Select visible furniture and map each item to the closest asset in this exact assetId:type catalog: '+json.dumps(CATALOG)+
                 '. Return JSON matching '+json.dumps(Plan.model_json_schema())+
                 '. Photo relationships are not metric 3D evidence. Propose approximate Y-up render-frame transforms only, '
@@ -326,10 +332,14 @@ async def generate_enhancements(request: Request, context: str=Form(...,max_leng
                 'Include every furniture item that is clearly visible; do not invent objects that are not in the photograph. '
                 'For each enhancement copy photoPosition [x, y] from the matching object in photo_analysis when it is present; '
                 'omit photoPosition when the analysis has none, and never invent one.')
-            plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
-                messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
-                response_format={'type':'json_object'},max_completion_tokens=4000,temperature=0,timeout=30)
-            return parse_plan(plan,stats=stats)
+            async def propose(tokens):
+                plan=await pipeline.openai.chat.completions.create(model=pipeline.settings.openai_model,
+                    messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps({'photo_analysis':observations.model_dump(exclude_none=True),'written_memory':ctx.story},ensure_ascii=False)}],
+                    response_format={'type':'json_object'},max_completion_tokens=tokens,temperature=0,timeout=30)
+                return parse_plan(plan,stats=stats)
+
+            try: return await propose(4000)
+            except PipelineFailure: return await propose(6000)
         result=await asyncio.wait_for(live(),55)
         return manifest(ctx,result.enhancements,'ai',diagnostics=_diagnostics(request,stats))
     except Exception as error:
