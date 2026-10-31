@@ -1,0 +1,9 @@
+**/.env
+**/.env.*
+**/.venv/**
+**/node_modules/**
+**/__pycache__/**
+**/test_images/**
+frontend/dist/**
+.git/**
+docs/**
