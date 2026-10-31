@@ -66,7 +66,7 @@ class EnhancementTests(unittest.TestCase):
             plan={'enhancements':[{**item(),'memory':''}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context(story='My supplied story'))},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['enhancements'][0]['memory'],'My supplied story')
-            plan={'enhancements':[{**item(),'assetId':'bad'}]}
+            plan={'enhancements':[{**item(),'type':'curtains','assetId':'curtains-01'}]}
             r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
             self.assertEqual(r.json()['source'],'demo');self.assertTrue(r.json()['fallback'])
     def test_invalid_and_oversized_photo(self):
@@ -131,6 +131,46 @@ class EnhancementTests(unittest.TestCase):
             self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
             memory=r.json()['enhancements'][0]['memory']
             self.assertEqual(memory,'');self.assertIsNone(PERSON_TERMS.search(memory))
+
+    def test_one_unusable_proposal_does_not_discard_the_rest(self):
+        # A single unmappable object (or an oversized list) used to fail the whole
+        # reply and silently fall back to no furniture.
+        good=item()
+        analysis=dict(objects=[{'description':f'Object {n}','location':'Floor','photoPosition':[.5,.5]} for n in range(25)],
+            spatial_layout='',lighting='',colors=['white']*12,uncertainty='')
+        plan={'enhancements':[good,{**item(),'id':'bad-1','type':'curtains','assetId':'curtain-01'},{**item(),'id':'bad-2','position':[0,0]}]}
+        create=AsyncMock(side_effect=[completion(analysis),completion(plan)])
+        vision=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+        b=io.BytesIO();Image.new('RGB',(32,32),'white').save(b,format='PNG')
+        with TestClient(app) as client:
+            app.state.pipeline=ScenePipeline(Settings(demo_mode=False),vision,None)
+            r=client.post('/api/generate-enhancements',data={'context':json.dumps(context())},files={'photo':('synthetic.png',b.getvalue(),'image/png')})
+            self.assertEqual(r.status_code,200);self.assertEqual(r.json()['source'],'ai')
+            self.assertEqual([e['id'] for e in r.json()['enhancements']],['bed-1'])
+            observed=json.loads(create.await_args_list[1].kwargs['messages'][1]['content'])['photo_analysis']
+            self.assertEqual(len(observed['objects']),20)
+            self.assertEqual(observed['spatial_layout'],'Layout not stated')
+
+    def test_everyday_names_map_onto_approved_assets(self):
+        # The planner names furniture the way a person would; those names must
+        # render as an approved mesh instead of being dropped.
+        from backend.enhancements import parse_plan
+        from backend.agent import PipelineFailure
+        plan={'enhancements':[
+            {**item(),'id':'bench-1','type':'bench','assetId':'bench-01'},
+            {**item(),'id':'nightstand-1','type':'Nightstand','assetId':'nightstand-wood'},
+            {**item(),'id':'ceiling-1','type':'chandelier','assetId':'chandelier-01','anchor':'ceiling'},
+            {**item(),'id':'chair-1','type':'bench','assetId':'chair-modern-01'},
+            {**item(),'id':'curtain-1','type':'curtains','assetId':'curtains-01'},
+        ]}
+        got={e.id:(e.type,e.assetId) for e in parse_plan(completion(plan)).enhancements}
+        self.assertEqual(got['bench-1'],('chair','chair-modern-01'))
+        self.assertEqual(got['nightstand-1'],('desk','desk-modern-01'))
+        self.assertEqual(got['ceiling-1'],('pendant','pendant-warm-01'))
+        self.assertEqual(got['chair-1'],('chair','chair-modern-01'))
+        self.assertNotIn('curtain-1',got)
+        with self.assertRaises(PipelineFailure):
+            parse_plan(completion({'enhancements':[{**item(),'type':'curtains','assetId':'curtains-01'}]}))
 
     def test_two_distinct_photos_reach_vision_and_mocked_planner(self):
         analysis=dict(objects=[],spatial_layout='A visible furniture item',lighting='Bright',colors=['white'],uncertainty='Approximate relationships only')
