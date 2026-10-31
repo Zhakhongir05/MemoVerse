@@ -33,3 +33,20 @@ export function preparePodcast(memoryId, request = memorycastRequest, { existing
   running.set(memoryId, task)
   return task
 }
+
+// Resume only existing durable work; never abort an in-flight leased step.
+export function watchPodcastPreparation(_owner, memoryId) {
+  let stopped = false, timer, failures = 0
+  async function run() {
+    try {
+      const result = await preparePodcast(memoryId)
+      if (stopped || result.tour?.status !== 'pending') return
+      failures = 0
+    } catch (error) {
+      if (stopped || ++failures >= 3 || (error.status >= 400 && error.status < 500)) return
+    }
+    timer = setTimeout(run, 15000)
+  }
+  void run()
+  return () => { stopped = true; clearTimeout(timer) }
+}

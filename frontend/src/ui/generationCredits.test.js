@@ -1,10 +1,10 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {FREE_GENERATIONS,PAID_PACK_GENERATIONS,PAID_PACK_PRICE_KRW,getGenerationPlan,remainingCredits,requestCreditGeneration} from './generationCredits.js'
+import {FREE_GENERATIONS,PAID_PLAN_UNLIMITED,PAID_PLAN_PRICE_KRW,getGenerationPlan,remainingCredits,requestCreditGeneration} from './generationCredits.js'
 const client={auth:{getSession:async()=>({data:{session:{user:{id:'account-a'},access_token:'session-token'}}})}}
 const photo=()=>new File(['picture'],'photo.jpg',{type:'image/jpeg'})
-test('free plan and mock pack keep teammate pricing terms',()=>{
- assert.equal(FREE_GENERATIONS,3);assert.equal(PAID_PACK_GENERATIONS,15);assert.equal(PAID_PACK_PRICE_KRW,10000)
+test('free allowance and unlimited preview use the requested pricing',()=>{
+ assert.equal(FREE_GENERATIONS,3);assert.equal(PAID_PLAN_UNLIMITED,true);assert.equal(PAID_PLAN_PRICE_KRW,15000)
  assert.equal(remainingCredits({credits_total:3,credits_used:3}),0)
 })
 test('plans read the same authenticated backend allowance and never fabricate three on failure',async()=>{

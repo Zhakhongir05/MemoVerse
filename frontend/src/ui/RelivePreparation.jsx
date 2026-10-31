@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { preparePodcast } from '../integration/preparePodcast.js'
+import { preparePodcast, watchPodcastPreparation } from '../integration/preparePodcast.js'
 import { journalWorldRequest, waitForJournalWorld } from '../integration/journalWorldApi.js'
 
 export default function RelivePreparation({ memory, hasWorldViewer, onGenerated, onExplore, onBack, onEdit, user, Photo, generationRequest }) {
@@ -44,6 +44,9 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
       onExplore(mode)
     } catch (error) { entered.current=false; setError(error.message || 'Could not open this saved world.') }
   }
+  useEffect(() => {
+    if (job?.status === 'succeeded' && user?.id) return watchPodcastPreparation(user.id, memory.id)
+  }, [job?.status, memory.id, user?.id])
   const completed = job?.status === 'succeeded'
   useEffect(() => {
     if (!completed || !hasWorldViewer || entered.current) return
