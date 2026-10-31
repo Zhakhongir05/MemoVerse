@@ -14,3 +14,6 @@
 .mv-studio-actions .mv-save-button{background:linear-gradient(115deg,#f5c6ad,#c77d60);color:#241b1a;border:0;font-weight:600}
 .mv-studio-actions .mv-save-button:disabled{opacity:.55;cursor:default}
 @media(max-width:720px){.mv-studio-toolbar{flex-wrap:wrap}.mv-studio-actions{flex-wrap:wrap}.mv-studio-actions .mv-save-button{font-size:11px}}
+
+.mv-auth-back{position:absolute;top:22px;left:5%;background:none;border:0;color:#f5c6ad;font:12px 'Segoe UI',sans-serif;padding:10px}
+@media(max-width:600px){.mv-auth-shell{padding-top:65px}}

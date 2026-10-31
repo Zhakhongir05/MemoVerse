@@ -1,5 +1,15 @@
 # MemoVerse account setup
 
+**Current journal sync:** follow `SUPABASE_JOURNAL_SYNC.md` and run
+`supabase/004_journal_sync.sql` to enable cloud journal persistence. The journal now
+syncs signed-in entries and media, retaining IndexedDB as a cache/offline queue.
+
+**Journal update:** the default app now opens the IndexedDB journal, documented in
+`JOURNAL_INTEGRATION.md`. Supabase still provides optional sign-in, and the original
+studio's cloud save flow is retained. Journal entries are stored locally, without
+requiring a Supabase migration or syncing to the cloud. The older studio setup
+instructions below apply to that separate cloud flow.
+
 The frontend now supports email/password login, sign-up, confirmation emails,
 Google sign-in, sign-out, and saving/opening the latest 50 memories per account.
 Inputs stay local until you select **Save changes** in the studio toolbar.
@@ -66,8 +76,9 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-With no configuration, the login UI shows setup guidance and an explicit local demo
-option. The demo has no account and cannot save data to Supabase.
+The Explore Memories page is public. Sign in opens the account interface. Visitors
+can return to exploring without an account, even when Supabase is not configured.
+Guest inputs are not saved. Signing in opens a fresh account workspace.
 
 ## 5. Verify with two accounts
 
@@ -134,3 +145,31 @@ References:
 - https://supabase.com/docs/guides/getting-started/tutorials/with-react
 - https://supabase.com/docs/guides/database/postgres/row-level-security
 - https://supabase.com/docs/guides/storage/security/access-control
+
+## Vercel configuration (required for deployed login)
+
+The ignored .env.local only configures your computer. In Vercel, open your project →
+Settings → Environment Variables and add:
+
+- VITE_SUPABASE_URL: your Supabase Project URL.
+- VITE_SUPABASE_PUBLISHABLE_KEY: your Supabase publishable key.
+
+Select both Production and Preview if you use branch deployments. Use raw values
+without surrounding quotes. Redeploy after saving; Vite embeds these at build time.
+The client also supports VITE_SUPABASE_ANON_KEY for the older public anon key.
+Never add a service-role or secret key.
+
+In Supabase → Authentication → URL Configuration, set Site URL to your production
+Vercel origin and allow that exact origin in Redirect URLs. Also allow any preview
+origins you test, while retaining localhost for development. In Google Cloud, add
+the production origin to Authorized JavaScript origins. The authorized redirect URI
+remains your Supabase /auth/v1/callback URL. Enable Google's provider in Supabase
+with your OAuth Client ID and Secret as described above.
+
+If accounts are unavailable, check Vercel variable names, values, environment scopes,
+and redeploy. If Google sign-in starts but fails or redirects to the wrong host,
+check the provider and redirect settings.
+
+References:
+- https://vercel.com/docs/environment-variables
+- https://supabase.com/docs/guides/auth/redirect-urls
