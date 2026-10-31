@@ -6,7 +6,7 @@ export const TEST_USERS=Array.from({length:12},(_,i)=>`00000000-0000-4000-8000-$
 export function sessionFor(id){
  const encoded=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
  const access_token=encoded({alg:'HS256',typ:'JWT'})+'.'+encoded({sub:id,role:'authenticated',aud:'authenticated',iat:1700000000,exp:4102444800,iss:'http://127.0.0.1:8036/auth/v1'})+'.test-only-signature';
- return {access_token,refresh_token:'test-refresh-'+id,expires_at:4102444800,expires_in:3600,token_type:'bearer',user:{id,email:`judge-${id.slice(-2)}@example.test`,aud:'authenticated',role:'authenticated',app_metadata:{provider:'google',providers:['google']},user_metadata:{},created_at:'2026-10-31T00:00:00Z'}};
+ return {access_token,refresh_token:'test-refresh-'+id,expires_at:4102444800,expires_in:3600,token_type:'bearer',user:{id,email:`judge-${id.slice(-2)}@example.test`,aud:'authenticated',role:'authenticated',app_metadata:{provider:'google',providers:['google']},identities:[{provider:'google'}],user_metadata:{},created_at:'2026-10-31T00:00:00Z'}};
 }
 const asset={id:'mock-world',splatUrl:'https://cdn.marble.worldlabs.ai/demo-generated.spz',fullResUrl:'https://cdn.marble.worldlabs.ai/demo-generated-full.spz',colliderUrl:'https://cdn.marble.worldlabs.ai/demo-collider.glb',thumbnailUrl:'https://cdn.marble.worldlabs.ai/demo-thumb.png'};
 async function serve(){

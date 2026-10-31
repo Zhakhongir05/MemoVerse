@@ -1,3 +1,4 @@
+import DictationButton from './DictationButton.jsx'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import './Dashboard.css'
 import MemoryLibrary from './MemoryLibrary'
@@ -107,7 +108,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
     setFailure('')
     setScreen('generation')
     try {
-      const result = await generateMemory({ file, audioFile, description: description.trim(), signal: request.signal })
+      const result = await generateMemory({ file, description: description.trim(), signal: request.signal })
       if (request.signal.aborted) return
       if (!result || typeof result !== 'object') throw new Error('Invalid scene')
       setScene(result.scene || result)
@@ -195,7 +196,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateStud
           <p id="mv-photo-help" className="mv-fine">JPG, PNG or WebP · Up to 4 MB · Choose a photo you can use</p>
           <p id="mv-image-error" className="mv-error" role="alert">{errors.image}</p>
         </div>
-        <div className="mv-glass mv-description-panel"><div className="mv-panel-label"><span>02</span><h2>The story behind it</h2></div><label htmlFor="mv-description">What do you remember?</label><textarea id="mv-description" value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} aria-invalid={!!errors.description} aria-describedby="mv-description-help mv-description-error" placeholder="We were at my grandmother’s house. The windows were open, the room smelled of summer rain, and somewhere a radio was playing…" /><div className="mv-textarea-meta"><span id="mv-description-help">Start with the details you can still feel.</span><span>{description.length}/2000</span></div><p id="mv-description-error" className="mv-error" role="alert">{errors.description}</p></div>
+        <div className="mv-glass mv-description-panel"><div className="mv-panel-label"><span>02</span><h2>The story behind it</h2></div><label htmlFor="mv-description">What do you remember?</label><textarea id="mv-description" value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} aria-invalid={!!errors.description} aria-describedby="mv-description-help mv-description-error" placeholder="We were at my grandmother’s house. The windows were open, the room smelled of summer rain, and somewhere a radio was playing…" /><DictationButton value={description} onChange={setDescription} maxLength={2000} disabled={pending} /><div className="mv-textarea-meta"><span id="mv-description-help">Start with the details you can still feel.</span><span>{description.length}/2000</span></div><p id="mv-description-error" className="mv-error" role="alert">{errors.description}</p></div>
         <div className="mv-submit-panel"><div className="mv-submit-actions">{user && <button type="button" className="mv-save-button" disabled={saving || libraryBusy || accountBusy || !memorySave.dirty} onClick={memorySave.save}>{saving ? 'Saving…' : memorySave.dirty ? 'Save changes' : memorySave.saved ? 'Saved ✓' : 'Save changes'}</button>}<button className="mv-primary" type="submit">{pending ? 'Generating…' : scene ? 'Regenerate My Memory' : 'Generate My Memory'} <span aria-hidden="true">✧</span></button></div><p className="mv-fine">{user ? 'Use Save changes to store your inputs privately. Scene generation uses the configured AI backend.' : isMock ? 'Local demo · Inputs are not saved to a server.' : 'Your inputs will be sent for generation.'}</p></div>
       </fieldset></form>
       {user && <div className="mv-autosave mv-glass">
