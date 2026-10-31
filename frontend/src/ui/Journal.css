@@ -47,3 +47,5 @@
 .mj-photo-plan p[role=status]{color:#f8dfb2;font-size:12px}
 .mj-photo-plan details{font-size:10px;color:#c3a99c}.mj-photo-plan summary{cursor:pointer;color:#f5c6ad}.mj-photo-plan details p{margin:8px 0 0}
 .mj-photo-plan .mj-photo-plan-limit{color:#ffc7b7}
+
+.mj-plan-banner{margin:12px auto 24px;padding:16px 22px;max-width:1160px;border:1px solid rgba(222,184,121,.2);border-radius:16px;background:rgba(26,24,35,.55);color:#eee1cf}.mj-plan-banner strong{margin-right:18px}.mj-plan-banner p{margin:8px 0 0;font-size:12px;color:#bdb2a6}

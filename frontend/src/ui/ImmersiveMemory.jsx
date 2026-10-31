@@ -57,6 +57,8 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
   }
   const renderProps = {
     scene: memory.scene, mood, memory, mode, imageUrl, enhancementOwner: memory.owner,
+    // Relive keeps the World Labs room, as before the integration branch.
+    worldMode: 'sample',
     activeStep: panel === 'journey' ? activeStep : null,
     showAnchors: false, showMarkers: false,
     cameraResetKey: cameraReset,

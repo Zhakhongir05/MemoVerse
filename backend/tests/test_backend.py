@@ -30,7 +30,7 @@ def client_mock(result):
 
 class EndpointTests(unittest.TestCase):
     def setUp(self):
-        self.pipeline = ScenePipeline(Settings())
+        self.pipeline = ScenePipeline(Settings(demo_mode=True))
         app.dependency_overrides[get_pipeline] = lambda: self.pipeline
         self.ctx = TestClient(app)
         self.client = self.ctx.__enter__()
@@ -84,12 +84,12 @@ class EndpointTests(unittest.TestCase):
             self.assertEqual(set(data['scene']['objects'][0]), {'id', 'type', 'position', 'scale', 'memory', 'audioUrl'})
             GenerateResponse.model_validate(data)
     def test_successful_endpoint_with_mocked_providers(self):
-        self.pipeline = ScenePipeline(Settings(demo_mode=False), client_mock(completion(ANALYSIS)), client_mock(completion(mock_scene().model_dump())))
+        self.pipeline = ScenePipeline(Settings(demo_mode=False, allow_fallback=True), client_mock(completion(ANALYSIS)), client_mock(completion(mock_scene().model_dump())))
         response = self.post()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {'scene': mock_scene().model_dump(mode='json'), 'source': 'ai', 'fallback': False, 'reason': None})
     def test_invalid_provider_output_endpoint(self):
-        self.pipeline = ScenePipeline(Settings(demo_mode=False), client_mock(completion(ANALYSIS)), client_mock(completion('{invalid')))
+        self.pipeline = ScenePipeline(Settings(demo_mode=False, allow_fallback=True), client_mock(completion(ANALYSIS)), client_mock(completion('{invalid')))
         response = self.post()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['reason'], 'invalid_model_output')
@@ -135,7 +135,7 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
             payload = ANALYSIS if request.url.host == 'api.openai.com' else mock_scene().model_dump()
             return httpx.Response(200, json={'id': 'test', 'object': 'chat.completion', 'created': 1, 'model': 'test', 'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {'role': 'assistant', 'content': json.dumps(payload)}}]})
         async with AsyncOpenAI(api_key='test-openai', http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle))) as vision, AsyncOpenAI(api_key='test-deepseek', base_url='https://api.deepseek.com', http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle))) as planner:
-            result = await ScenePipeline(Settings(demo_mode=False), vision, planner).generate('Written memory only', image(), 'image/png')
+            result = await ScenePipeline(Settings(demo_mode=False, allow_fallback=True), vision, planner).generate('Written memory only', image(), 'image/png')
         self.assertEqual(result.source, 'ai')
         self.assertEqual([r.url.host for r in requests], ['api.openai.com', 'api.deepseek.com'])
         first, second = [json.loads(r.content) for r in requests]
@@ -148,13 +148,13 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(second['messages'][1]['content'])['photo_analysis'], ANALYSIS)
     async def test_invalid_empty_truncated_deepseek(self):
         for output in [completion(''), completion('   '), completion('not json'), completion(mock_scene().model_dump(), 'length'), completion({'objects': []})]:
-            pipeline = ScenePipeline(Settings(demo_mode=False), client_mock(completion(ANALYSIS)), client_mock(output))
+            pipeline = ScenePipeline(Settings(demo_mode=False, allow_fallback=True), client_mock(completion(ANALYSIS)), client_mock(output))
             result = await pipeline.generate('My room', image(), 'image/png')
             self.assertEqual(result.reason, 'invalid_model_output')
             self.assertTrue(result.fallback)
     async def test_invalid_vision_does_not_call_deepseek(self):
         second = client_mock(completion(mock_scene().model_dump()))
-        result = await ScenePipeline(Settings(demo_mode=False), client_mock(completion('bad')), second).generate('story', image(), 'image/png')
+        result = await ScenePipeline(Settings(demo_mode=False, allow_fallback=True), client_mock(completion('bad')), second).generate('story', image(), 'image/png')
         self.assertEqual(result.reason, 'invalid_model_output')
         second.chat.completions.create.assert_not_awaited()
     async def test_timeout_and_provider_failure(self):
@@ -162,17 +162,17 @@ class PipelineTests(unittest.IsolatedAsyncioTestCase):
         async def slow(**kwargs):
             await asyncio.sleep(.1)
         vision.chat.completions.create.side_effect = slow
-        result = await ScenePipeline(Settings(demo_mode=False, timeout=.001), vision, client_mock(None)).generate('story', image(), 'image/png')
+        result = await ScenePipeline(Settings(demo_mode=False, allow_fallback=True, timeout=.001), vision, client_mock(None)).generate('story', image(), 'image/png')
         self.assertEqual(result.reason, 'provider_timeout')
         from openai import APIConnectionError
         vision.chat.completions.create.side_effect = APIConnectionError(request=httpx.Request('POST', 'https://api.openai.com'))
-        result = await ScenePipeline(Settings(demo_mode=False), vision, client_mock(None)).generate('story', image(), 'image/png')
+        result = await ScenePipeline(Settings(demo_mode=False, allow_fallback=True), vision, client_mock(None)).generate('story', image(), 'image/png')
         self.assertEqual(result.reason, 'provider_failure')
     async def test_missing_keys_and_demo_do_not_call_providers(self):
-        result = await ScenePipeline(Settings(demo_mode=False)).generate('story', image(), 'image/png')
+        result = await ScenePipeline(Settings(demo_mode=False, allow_fallback=True)).generate('story', image(), 'image/png')
         self.assertEqual(result.reason, 'missing_credentials')
         client = client_mock(None)
-        result = await ScenePipeline(Settings(), client, client).generate('story', image(), 'image/png')
+        result = await ScenePipeline(Settings(demo_mode=True), client, client).generate('story', image(), 'image/png')
         self.assertEqual(result.reason, 'demo_mode')
         client.chat.completions.create.assert_not_awaited()
     async def test_fallback_disabled_is_structured_http_error(self):

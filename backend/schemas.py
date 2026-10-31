@@ -54,3 +54,12 @@ class GenerateResponse(ContractModel):
     source: Literal['ai', 'mock']
     fallback: bool
     reason: Optional[Literal['demo_mode', 'missing_credentials', 'provider_timeout', 'provider_failure', 'invalid_model_output']]
+
+
+    @model_validator(mode='after')
+    def consistent_provenance(self):
+        if self.source == 'ai' and (self.fallback or self.reason is not None):
+            raise ValueError('AI success cannot carry fallback provenance')
+        if self.source == 'mock' and (not self.fallback or self.reason is None):
+            raise ValueError('Mock output requires fallback provenance')
+        return self

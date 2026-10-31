@@ -36,7 +36,7 @@ class BodyLimitMiddleware:
     def __init__(self, app):
         self.app = app
     async def __call__(self, scope, receive, send):
-        if scope['type'] != 'http' or scope.get('path') not in ('/api/generate-scene', '/api/generate-enhancements'):
+        if scope['type'] != 'http' or scope.get('path') not in ('/api/generate-scene', '/api/world-jobs', '/api/generate-enhancements'):
             return await self.app(scope, receive, send)
         limit = MAX_PHOTO_BYTES + 64 * 1024
         body = bytearray()
@@ -61,9 +61,10 @@ class BodyLimitMiddleware:
         await self.app(scope, replay, send)
 app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=[
+    'https://memoverse05.vercel.app',
     'http://localhost:5173', 'http://127.0.0.1:5173',
     'http://localhost:3000', 'http://127.0.0.1:3000',
-], allow_credentials=False, allow_methods=['GET', 'POST'], allow_headers=['Content-Type'])
+], allow_credentials=False, allow_methods=['GET', 'POST'], allow_headers=['Content-Type', 'Authorization'])
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(_request, error):
@@ -85,7 +86,7 @@ async def input_error(_request, error):
 @app.exception_handler(PipelineFailure)
 async def pipeline_error(_request, error):
     return JSONResponse(status_code=504 if error.code == 'provider_timeout' else 503 if error.code == 'missing_credentials' else 502,
-                        content={'detail': [{'loc': ['provider'], 'type': error.code, 'msg': 'Scene generation unavailable. Retry or enable demo mode.'}]})
+                        content={'detail': [{'loc': ['provider'] + ([error.stage] if error.stage else []), 'type': error.code, 'msg': {'missing_credentials': 'Scene generation is not configured on the server.', 'provider_timeout': 'AI provider timed out. Please retry.', 'provider_failure': 'AI provider failed. Please retry later.', 'invalid_model_output': 'AI provider returned an invalid scene. Please retry.'}.get(error.code, 'Scene generation unavailable.')}]})
 
 @app.middleware('http')
 async def private_responses(request, call_next):
@@ -145,8 +146,20 @@ async def generate_scene(story: str = Form(...), photo: UploadFile = File(...), 
     finally:
         await photo.close()
 
-try:
-    from .enhancements import router as enhancement_router
-except ImportError:
-    from backend.enhancements import router as enhancement_router
+from .worlds import router as world_router
+app.include_router(world_router)
+
+
+@app.get('/api/generation-status')
+def generation_status(request: Request):
+    import os
+    settings = request.app.state.pipeline.settings
+    return {
+        'scene_mode': 'demo' if settings.demo_mode else 'ai',
+        'mock_fallback_enabled': settings.allow_fallback,
+        'scene_providers_configured': bool(settings.openai_key and settings.deepseek_key),
+        'world_generation_enabled': os.getenv('WORLD_GENERATION_ENABLED', 'false').lower() == 'true',
+    }
+
+from .enhancements import router as enhancement_router
 app.include_router(enhancement_router)
