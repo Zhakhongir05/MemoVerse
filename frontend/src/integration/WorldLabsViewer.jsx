@@ -9,6 +9,7 @@ import EnhancementLayer from '../enhancements/EnhancementLayer.jsx';
 import { ASSET_CATALOG } from '../enhancements/catalog.js';
 import { DEMO_ENHANCEMENT_RESPONSE, fitEnhancementsToBounds, parseEnhancementsForWorld } from '../enhancements/schema.js';
 import { requestEnhancements, toProposal } from '../enhancements/api.js';
+import MemoryCastCamera from './MemoryCastCamera.jsx';
 
 function Assets({wireframe, placing, onPlace, onStatus, onCollider, quality, world}) {
  const {gl,scene}=useThree(); const collider=useRef(null); const [loadedCollider,setLoadedCollider]=useState(null);
@@ -77,7 +78,7 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({world=existingWorld,enhancementResponse,mood:externalMood,onMoodChange,embedded=false,imageUrl='',scene=null}){
+export default function WorldLabsViewer({world=existingWorld,enhancementResponse,mood:externalMood,onMoodChange,embedded=false,imageUrl='',scene=null,memorycastCue}){
  const response=enhancementResponse??(world.id===existingWorld.id?DEMO_ENHANCEMENT_RESPONSE:null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState(()=>{
   const initial=(response?readEnhancements(response,world.id):{enhancements:[],error:''});
@@ -87,6 +88,7 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
  const [status,setStatus]=useState(world.id===existingWorld.id?'Opening saved sample…':'Opening your newly generated world…');
  const [wireframe,setWireframe]=useState(false),[placing,setPlacing]=useState(false);
  const [anchors,setAnchors]=useState([]),[selected,setSelected]=useState(null);
+ const activeAnchorId=anchors.some(item=>item.id===memorycastCue?.anchor_id)?memorycastCue.anchor_id:selected;
  const [memory,setMemory]=useState(''),[moodSetting,setMoodSetting]=useState('nostalgic');
  // A host (the Dashboard's SenseShift radios) can drive the mood; otherwise use the local buttons.
  const requestedMood=externalMood?externalMood.toLowerCase():moodSetting;
@@ -96,7 +98,7 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
  const [calibrating,setCalibrating]=useState(false),[transformMode,setTransformMode]=useState('translate');
  const [colliderMesh,setColliderMesh]=useState(null);
  const controls=useRef(null),urls=useRef(new Set()),audio=useRef(null),needsFit=useRef(false),roomRef=useRef(null);
- const selectedAnchor=anchors.find(a=>a.id===selected);
+ const selectedAnchor=anchors.find(a=>a.id===activeAnchorId);
  const selectedEnhancementData=enhancements.find(e=>e.id===selectedEnhancement);
  useEffect(()=>{
   const next=(response?readEnhancements(response,world.id):{enhancements:[],error:''});
@@ -218,9 +220,10 @@ export default function WorldLabsViewer({world=existingWorld,enhancementResponse
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
    <EnhancementLayer enhancements={enhancements} collider={colliderMesh} mood={mood} selectedId={selectedEnhancement} calibrating={calibrating} transformMode={transformMode} onSelect={selectEnhancement} onTransform={updateEnhancement} onGround={groundEnhancement}/>
-   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={selected===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
-   <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>setJourney(0)}/>
-   <CameraJourney controls={controls} journey={journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
+   {anchors.map(a=><mesh key={a.id} renderOrder={10000} position={a.position} onClick={e=>{e.stopPropagation();setSelected(a.id);setSelectedEnhancement(null);}}><sphereGeometry args={[.025,16,16]}/><meshBasicMaterial color={activeAnchorId===a.id?'#fff0b6':'#dfad62'} transparent depthTest={false} depthWrite={false}/></mesh>)}
+   <OrbitControls ref={controls} makeDefault target={[0,0,-2]} enableDamping dampingFactor={.07} minDistance={.08} maxDistance={8} zoomSpeed={.5} panSpeed={.55} rotateSpeed={.4} onStart={()=>{setJourney(0);memorycastCue?.onCancel?.();}}/>
+   <CameraJourney controls={controls} journey={memorycastCue?0:journey} ready={status.startsWith('Loaded')} onDone={()=>setJourney(0)}/>
+   <MemoryCastCamera cue={memorycastCue} controls={controls} ready={status.startsWith('Loaded')} stopDefaultJourney={setJourney}/>
   </Canvas>
   <div className="atmosphere-wash" aria-hidden="true"/>
   <div className="sense-controls" aria-label="SenseShift atmosphere">

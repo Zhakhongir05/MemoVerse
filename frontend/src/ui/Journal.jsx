@@ -5,6 +5,7 @@ import './Dashboard.css'
 import './Journal.css'
 import MemoryTimeline from './MemoryTimeline'
 import ImmersiveMemory from './ImmersiveMemory'
+import MemoryCast from './MemoryCast.jsx'
 import RelivePreparation from './RelivePreparation'
 import GenerationPlans from './GenerationPlans'
 import PhotoPlanInfo from './PhotoPlanInfo'
@@ -266,7 +267,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       {renderMemoryForm()}
     </section>}
 
-    {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
+    {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button><MemoryCast user={user} memory={selected} /></article>
         <div className="mj-detail-media">{selected.photos.length ? <><Photo file={selected.photos[activePhoto]} alt={`${selected.title}, photograph ${activePhoto + 1}`} className="mj-detail-cover" /><div className="mj-thumbnails">{selected.photos.map((photo, index) => <button key={index} aria-label={`View photograph ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)}><Photo file={photo} alt="" /></button>)}</div></> : <div className="mj-detail-no-photo" aria-hidden="true">◈<span>A moment held in words</span></div>}
           <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
             setDemo(false)
@@ -281,7 +282,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }
     }} />}
-    {view === 'relive' && selected && <ImmersiveMemory symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) setView(demo ? 'journal' : 'detail') }} onOpenStudio={LegacyStudio ? () => { if (cancelReliveEdit()) setView('studio') } : undefined} Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
+    {view === 'relive' && selected && <ImmersiveMemory user={user} symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) setView(demo ? 'journal' : 'detail') }} onOpenStudio={LegacyStudio ? () => { if (cancelReliveEdit()) setView('studio') } : undefined} Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
 
   </main>
 }
