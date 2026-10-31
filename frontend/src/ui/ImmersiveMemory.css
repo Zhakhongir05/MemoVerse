@@ -18,4 +18,4 @@
 /* The sensory evidence card sits above the sense buttons and the floating
    journal toolbar, and never grows past the top bar on short screens. */
 .im-renderer .sense-card{bottom:144px;max-height:calc(100% - 220px);overflow:auto}
-@media(max-width:650px){.im-renderer .sense-card{bottom:auto;top:64px}}
+@media(max-width:650px){.im-renderer .sense-card{bottom:auto;top:72px}}

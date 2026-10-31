@@ -10,6 +10,8 @@ remembers its senses back.
 
 ## The sensory memory layer
 
+![The sample room with an evidence card reading "Woodsmoke — The room smells of woodsmoke and fresh bread. Remembered from your words", and the Senses on and Sensory pass controls](docs/assets/sensory-demo.jpg)
+
 Write an entry — rain at the window, woodsmoke in the air, cold boards, lamp
 light — and the room surfaces those senses one at a time. Each cue is copied
 from the writer's own sentence and shows that sentence beside it, so the

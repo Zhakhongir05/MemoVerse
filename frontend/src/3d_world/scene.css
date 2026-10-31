@@ -174,11 +174,16 @@
 
 @media (max-width: 600px) {
   .mv-hybrid-scene .sense-card {
-    top: 64px;
+    top: 72px;
     right: 12px;
     bottom: auto;
     left: 12px;
     width: auto;
+  }
+
+  /* Keep the sense buttons clear of the centered journal toolbar. */
+  .mv-hybrid-scene .sense-play {
+    bottom: 96px;
   }
 }
 
