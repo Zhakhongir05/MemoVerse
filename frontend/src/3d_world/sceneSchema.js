@@ -23,6 +23,15 @@ const TYPE_ALIASES = {
 const DEFAULT_DEPTH = 0.15
 const DEFAULT_IMAGE_ASPECT = 16 / 9
 
+export const DEFAULT_STAGE = {
+  // Normalized image Y where the painted wall meets the painted floor.
+  floorLine: 0.62,
+  floorColor: '#3b2a21',
+  vanishingPoint: [0.5, 0.47],
+  cameraHeight: 1.5,
+  orbit: { azimuth: 0.35, polar: 0.2 },
+}
+
 export function normalizeType(type) {
   const value = String(type ?? '')
     .trim()
@@ -38,6 +47,10 @@ function asNumber(value, fallback) {
 
 function clamp01(value) {
   return Math.min(1, Math.max(0, value))
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function normalizePosition(position) {
@@ -88,6 +101,16 @@ function normalizeObject(raw, index) {
     label: typeof raw.label === 'string' ? raw.label : '',
     memoryId: raw.memoryId != null ? String(raw.memoryId) : null,
     interactive: raw.interactive !== false,
+    // Optional placement hints. `anchor` overrides the type default and
+    // `support` makes a prop ride on another prop's top surface.
+    anchor:
+      raw.anchor === 'floor' ||
+      raw.anchor === 'wall' ||
+      raw.anchor === 'surface' ||
+      raw.anchor === 'image'
+        ? raw.anchor
+        : null,
+    support: raw.support != null ? String(raw.support) : null,
   }
 }
 
@@ -129,6 +152,46 @@ function normalizeAtmosphere(raw) {
   }
 }
 
+function normalizeStage(raw) {
+  const stage = raw && typeof raw === 'object' ? raw : {}
+  const orbit = stage.orbit && typeof stage.orbit === 'object' ? stage.orbit : {}
+  const vanishingPoint = Array.isArray(stage.vanishingPoint)
+    ? stage.vanishingPoint
+    : DEFAULT_STAGE.vanishingPoint
+
+  return {
+    floorLine: clamp(
+      asNumber(stage.floorLine, DEFAULT_STAGE.floorLine),
+      0.5,
+      0.95,
+    ),
+    floorColor:
+      typeof stage.floorColor === 'string'
+        ? stage.floorColor
+        : DEFAULT_STAGE.floorColor,
+    vanishingPoint: [
+      clamp01(asNumber(vanishingPoint[0], DEFAULT_STAGE.vanishingPoint[0])),
+      clamp01(asNumber(vanishingPoint[1], DEFAULT_STAGE.vanishingPoint[1])),
+    ],
+    cameraHeight: Math.max(
+      0.5,
+      asNumber(stage.cameraHeight, DEFAULT_STAGE.cameraHeight),
+    ),
+    orbit: {
+      azimuth: clamp(
+        asNumber(orbit.azimuth, DEFAULT_STAGE.orbit.azimuth),
+        0,
+        Math.PI / 2,
+      ),
+      polar: clamp(
+        asNumber(orbit.polar, DEFAULT_STAGE.orbit.polar),
+        0,
+        Math.PI / 2 - 0.01,
+      ),
+    },
+  }
+}
+
 export function normalizeScene(raw) {
   const scene = raw && typeof raw === 'object' ? raw : {}
 
@@ -136,6 +199,7 @@ export function normalizeScene(raw) {
     id: String(scene.id ?? 'scene'),
     background: normalizeBackground(scene.background),
     atmosphere: normalizeAtmosphere(scene.atmosphere),
+    stage: normalizeStage(scene.stage),
     objects: Array.isArray(scene.objects)
       ? scene.objects.map(normalizeObject).filter(Boolean)
       : [],
@@ -147,6 +211,10 @@ export const MOCK_SCENE = {
   id: 'mock_90s_room',
   background: { url: null, width: 16, height: 9 },
   atmosphere: DEFAULT_ATMOSPHERE,
+  stage: {
+    ...DEFAULT_STAGE,
+    floorColor: '#4a3427',
+  },
   objects: [
     {
       id: 'bed_1',
@@ -175,6 +243,7 @@ export const MOCK_SCENE = {
       depth: 0.2,
       rotation: [0, -6, 0],
       scale: 1.6,
+      support: 'desk_1',
       label: 'Old CRT television',
       memoryId: 'mem_tv_1',
     },
@@ -185,6 +254,7 @@ export const MOCK_SCENE = {
       depth: 0.2,
       rotation: [0, 0, 0],
       scale: 1.75,
+      support: 'desk_1',
       label: 'Desk lamp',
       memoryId: 'mem_lamp_1',
     },

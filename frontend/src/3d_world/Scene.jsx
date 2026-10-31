@@ -1,10 +1,12 @@
 import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useThree } from '@react-three/fiber'
 import { OrbitControls, useTexture } from '@react-three/drei'
-import { BackSide, SRGBColorSpace } from 'three'
+import { BackSide, CanvasTexture, RepeatWrapping, SRGBColorSpace } from 'three'
 
 import Interactable from './Interactable'
+import ContactShadow from './ContactShadow'
 import { getObjectComponent } from './registry'
+import { layoutObjects } from './layout'
 import { normalizeScene, MOCK_SCENE } from './sceneSchema'
 import {
   BACKDROP_Z,
@@ -20,7 +22,7 @@ import DevScenePanel from './DevScenePanel'
 /* Stage                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function StageProvider({ background, children }) {
+function StageProvider({ background, stage, children }) {
   const size = useThree((state) => state.size)
   const camera = useThree((state) => state.camera)
 
@@ -32,8 +34,16 @@ function StageProvider({ background, children }) {
         fov: camera.fov ?? CAMERA_FOV,
         imageWidth: background.width,
         imageHeight: background.height,
+        floorLine: stage.floorLine,
       }),
-    [size.width, size.height, camera.fov, background.width, background.height],
+    [
+      size.width,
+      size.height,
+      camera.fov,
+      background.width,
+      background.height,
+      stage.floorLine,
+    ],
   )
 
   return (
@@ -96,6 +106,88 @@ function Background({ background }) {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Floor                                                                      */
+/* -------------------------------------------------------------------------- */
+
+// The painted room supplies the far floor; this plane is the real foreground
+// floor. It starts at the paint line and runs toward the camera, so props can
+// stand on it with real perspective and contact shadows. It is unlit and
+// textured in canvas so its color matches the painted backdrop exactly.
+function Floor({ stage }) {
+  const { stageWidth, floorY, backdropZ, floorNearZ } = useStage()
+  const depth = floorNearZ - backdropZ
+
+  const texture = useMemo(() => {
+    if (typeof document === 'undefined') return null
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 512
+    canvas.height = 512
+
+    const context = canvas.getContext('2d')
+    if (!context) return null
+
+    context.fillStyle = stage.floorColor
+    context.fillRect(0, 0, 512, 512)
+
+    // Light falloff toward the viewer.
+    const gradient = context.createLinearGradient(0, 0, 0, 512)
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0.02)')
+    gradient.addColorStop(0.65, 'rgba(0, 0, 0, 0.1)')
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.22)')
+    context.fillStyle = gradient
+    context.fillRect(0, 0, 512, 512)
+
+    // Plank ends across the room.
+    context.strokeStyle = 'rgba(0, 0, 0, 0.1)'
+    context.lineWidth = 2
+    for (let y = 32; y < 512; y += 42) {
+      context.beginPath()
+      context.moveTo(0, y)
+      context.lineTo(512, y)
+      context.stroke()
+    }
+
+    // Seams running toward the wall.
+    context.strokeStyle = 'rgba(0, 0, 0, 0.08)'
+    for (let x = 0; x < 512; x += 74) {
+      context.beginPath()
+      context.moveTo(x, 0)
+      context.lineTo(x, 512)
+      context.stroke()
+    }
+
+    // Baked shadow where the wall meets the floor.
+    const seam = context.createLinearGradient(0, 0, 0, 64)
+    seam.addColorStop(0, 'rgba(0, 0, 0, 0.38)')
+    seam.addColorStop(1, 'rgba(0, 0, 0, 0)')
+    context.fillStyle = seam
+    context.fillRect(0, 0, 512, 64)
+
+    const result = new CanvasTexture(canvas)
+    result.colorSpace = SRGBColorSpace
+    result.wrapS = RepeatWrapping
+    result.wrapT = RepeatWrapping
+    result.repeat.set(4, 1)
+    return result
+  }, [stage.floorColor])
+
+  return (
+    <mesh
+      position={[0, floorY, (backdropZ + floorNearZ) / 2]}
+      rotation={[-Math.PI / 2, 0, 0]}
+    >
+      <planeGeometry args={[stageWidth, depth]} />
+      <meshBasicMaterial
+        map={texture ?? undefined}
+        color={texture ? '#ffffff' : stage.floorColor}
+        toneMapped={false}
+      />
+    </mesh>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
 /* Lighting                                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -120,9 +212,11 @@ function Lighting({ atmosphere }) {
 /* Controls                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function CameraRig({ enabled = true }) {
+function CameraRig({ enabled = true, orbit }) {
   const controls = useRef()
   const domElement = useThree((state) => state.gl.domElement)
+  const azimuth = orbit?.azimuth ?? 0.35
+  const polar = orbit?.polar ?? 0.2
 
   useEffect(() => {
     const handleDoubleClick = () => controls.current?.reset()
@@ -142,11 +236,11 @@ function CameraRig({ enabled = true }) {
       zoomSpeed={0.8}
       panSpeed={0.7}
       minDistance={4}
-      maxDistance={24}
-      minPolarAngle={Math.PI / 2 - 0.7}
-      maxPolarAngle={Math.PI / 2 + 0.5}
-      minAzimuthAngle={-1.0}
-      maxAzimuthAngle={1.0}
+      maxDistance={22}
+      minPolarAngle={Math.PI / 2 - polar}
+      maxPolarAngle={Math.PI / 2 + polar}
+      minAzimuthAngle={-azimuth}
+      maxAzimuthAngle={azimuth}
     />
   )
 }
@@ -165,20 +259,31 @@ function VoidBackdrop() {
 /* Scene                                                                      */
 /* -------------------------------------------------------------------------- */
 
-function SceneContents({ scene, onSelect, onHover, onMove, editMode }) {
+function StageScene({ scene, onSelect, onHover, onMove, editMode }) {
+  const mapping = useStage()
+  const placements = useMemo(
+    () => layoutObjects(scene.objects, mapping),
+    [scene.objects, mapping],
+  )
+
   return (
-    <StageProvider background={scene.background}>
+    <>
       <Lighting atmosphere={scene.atmosphere} />
       {scene.background.url && <VoidBackdrop />}
       <Background background={scene.background} />
+      <Floor stage={scene.stage} />
 
       {scene.objects.map((object) => {
         const ObjectComponent = getObjectComponent(object.type)
+        const placement = placements.get(object.id)
+
+        if (!placement) return null
 
         return (
           <Interactable
             key={object.id}
             object={object}
+            placement={placement}
             onSelect={onSelect}
             onHover={onHover}
             onMove={onMove}
@@ -189,7 +294,29 @@ function SceneContents({ scene, onSelect, onHover, onMove, editMode }) {
         )
       })}
 
-      <CameraRig enabled={!editMode} />
+      {scene.objects.map((object) => {
+        const placement = placements.get(object.id)
+
+        if (!placement) return null
+
+        return (
+          <ContactShadow
+            key={`shadow_${object.id}`}
+            object={object}
+            placement={placement}
+          />
+        )
+      })}
+
+      <CameraRig enabled={!editMode} orbit={scene.stage.orbit} />
+    </>
+  )
+}
+
+function SceneContents({ scene, ...rest }) {
+  return (
+    <StageProvider background={scene.background} stage={scene.stage}>
+      <StageScene scene={scene} {...rest} />
     </StageProvider>
   )
 }
@@ -264,8 +391,9 @@ export default function Scene({
       }}
     >
       <Canvas
-        // The background image supplies the room and its lighting; there is no
-        // 3D floor for shadows to land on, so the shadow map stays off.
+        // The background image supplies the room and its baked lighting; props
+        // use cheap contact blobs instead of a shadow map that would disagree
+        // with the painted light direction.
         gl={{ alpha: true }}
         dpr={[1, 2]}
         camera={{
@@ -284,6 +412,19 @@ export default function Scene({
           editMode={editMode}
         />
       </Canvas>
+
+      {/* Vignette binds the painted backdrop and the 3D floor together. */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 3,
+          pointerEvents: 'none',
+          background:
+            'radial-gradient(ellipse at 50% 42%, rgba(0, 0, 0, 0) 38%, rgba(11, 8, 7, 0.45) 100%)',
+        }}
+      />
 
       {/* Soft fade-through when the scene changes; remounts on each new scene. */}
       <div

@@ -5,18 +5,28 @@ import { createContext, useContext } from 'react'
 export const CAMERA_Z = 11
 export const BACKDROP_Z = -4
 export const CAMERA_FOV = 45
-export const DEPTH_MIN = 0.4
-export const DEPTH_MAX = 2.6
+// The 3D floor stops just in front of the camera instead of reaching it.
+export const FLOOR_NEAR_Z = CAMERA_Z - 2.5
 
 const DEFAULT_IMAGE_ASPECT = 16 / 9
+
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value))
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
 
 /**
  * Maps normalized image coordinates to world coordinates.
  *
  * The background is letterboxed (object-fit: contain) inside the viewport, so
  * (0.5, 0.5) is always the center of the image and x/y stay predictable at any
- * window size. `depth` (0..1) moves the object toward the camera; its screen
- * projection stays anchored to the same normalized point.
+ * window size. `floorLine` is the image-space Y where the painted wall meets
+ * the painted floor; the renderer puts a real 3D floor at that height, and
+ * floor props are solved onto it so their base still projects to their
+ * normalized image position.
  */
 export function createStageMapping({
   viewportWidth,
@@ -24,6 +34,7 @@ export function createStageMapping({
   fov = CAMERA_FOV,
   imageWidth,
   imageHeight,
+  floorLine = 0.62,
 }) {
   const safeWidth = viewportWidth > 0 ? viewportWidth : 1
   const safeHeight = viewportHeight > 0 ? viewportHeight : 1
@@ -35,44 +46,57 @@ export function createStageMapping({
       : DEFAULT_IMAGE_ASPECT
 
   const cameraDistance = CAMERA_Z - BACKDROP_Z
-  const visibleHeight = 2 * Math.tan((fov * Math.PI) / 360) * cameraDistance
+  const tanHalfFov = Math.tan((fov * Math.PI) / 360)
+  const visibleHeight = 2 * tanHalfFov * cameraDistance
   const visibleWidth = visibleHeight * aspect
 
   // Letterbox: the stage keeps the image aspect inside the viewport.
   const stageHeight = Math.min(visibleHeight, visibleWidth / imageAspect)
   const stageWidth = stageHeight * imageAspect
 
-  // Compensates for perspective so `scale` means "size relative to the image
-  // plane", independent of how far forward the object sits.
-  const depthScale = (depth = 0) => {
-    const d = Math.min(1, Math.max(0, depth))
-    const z = DEPTH_MIN + d * (DEPTH_MAX - DEPTH_MIN)
-    return (CAMERA_Z - z) / cameraDistance
+  const safeFloorLine = clamp(floorLine, 0.5, 0.95)
+  // The camera sits at y = 0, so this is also how far below eye level the
+  // painted floor is.
+  const floorY = (0.5 - safeFloorLine) * stageHeight
+
+  // Perspective factor relative to the backdrop plane (1 at the wall).
+  const perspectiveAtZ = (z) =>
+    Math.max(0.001, (CAMERA_Z - z) / cameraDistance)
+
+  const imageXToWorld = (nx, perspective = 1) =>
+    (nx - 0.5) * stageWidth * perspective
+
+  const imageYToWorld = (ny, perspective = 1) =>
+    (0.5 - ny) * stageHeight * perspective
+
+  // Solve the floor depth whose projection lands on image-space `ny`.
+  const floorZFromImageY = (ny) => {
+    const safeNy = clamp(ny, safeFloorLine + 0.002, 1)
+    return CAMERA_Z + floorY / (2 * (safeNy - 0.5) * tanHalfFov)
   }
 
-  const toWorld = (nx, ny, depth = 0) => {
-    const d = Math.min(1, Math.max(0, depth))
-    const z = DEPTH_MIN + d * (DEPTH_MAX - DEPTH_MIN)
-    // Perspective shrink so the object's origin projects onto (nx, ny).
-    const scale = depthScale(d)
+  // Inverse of the above: image-space Y of a point on the floor at depth z.
+  const imageYFromFloorZ = (z) => {
+    const distance = Math.max(0.2, CAMERA_Z - z)
+    return 0.5 - floorY / (2 * distance * tanHalfFov)
+  }
 
+  // Inverse used by the dev drag tool for wall / surface props.
+  const fromWorldAtZ = (x, y, z) => {
+    const perspective = perspectiveAtZ(z)
     return [
-      (nx - 0.5) * stageWidth * scale,
-      (0.5 - ny) * stageHeight * scale,
-      z,
+      clamp01(0.5 + x / (stageWidth * perspective)),
+      clamp01(0.5 - y / (stageHeight * perspective)),
     ]
   }
 
-  // Inverse of toWorld's x/y, used by the dev drag-to-place tool.
-  const fromWorld = (x, y, depth = 0) => {
-    const d = Math.min(1, Math.max(0, depth))
-    const scale = depthScale(d)
-    const width = stageWidth * scale
-    const height = stageHeight * scale
-
+  // Inverse used by the dev drag tool for floor props.
+  const fromFloorPoint = (x, z) => {
+    const safeZ = clamp(z, BACKDROP_Z, FLOOR_NEAR_Z)
+    const perspective = perspectiveAtZ(safeZ)
     return [
-      Math.min(1, Math.max(0, 0.5 + x / width)),
-      Math.min(1, Math.max(0, 0.5 - y / height)),
+      clamp01(0.5 + x / (stageWidth * perspective)),
+      clamp(imageYFromFloorZ(safeZ), safeFloorLine, 1),
     ]
   }
 
@@ -81,9 +105,17 @@ export function createStageMapping({
     stageHeight,
     imageAspect,
     aspect,
-    toWorld,
-    fromWorld,
-    depthScale,
+    floorLine: safeFloorLine,
+    floorY,
+    floorNearZ: FLOOR_NEAR_Z,
+    backdropZ: BACKDROP_Z,
+    perspectiveAtZ,
+    imageXToWorld,
+    imageYToWorld,
+    floorZFromImageY,
+    imageYFromFloorZ,
+    fromWorldAtZ,
+    fromFloorPoint,
   }
 }
 

@@ -3,27 +3,29 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { MathUtils, Plane, Raycaster, Vector2, Vector3 } from 'three'
 import { useStage } from './stage'
 
-const PARALLAX_X = 2.0
-const PARALLAX_Y = 1.0
+const PARALLAX_X = 1.0
+const PARALLAX_Y = 0.5
 const HOVER_SCALE = 1.045
 
 /**
- * Positions an object from normalized scene coordinates and gives it the
- * shared hover / click / parallax behaviour. `children` is a render prop that
+ * Positions an object from its resolved placement and gives it the shared
+ * hover / click / parallax behaviour. `children` is a render prop that
  * receives the hover state so individual props can react (e.g. CRT glow).
  *
- * In dev `editMode`, dragging an object moves it in X/Y on the image and calls
- * `onMove(id, [x, y])` with the new normalized position.
+ * In dev `editMode`, dragging an object moves it on its anchor plane (the 3D
+ * floor for floor props, the image plane otherwise) and calls
+ * `onMove(id, [x, y])` with the new normalized image position.
  */
 export default function Interactable({
   object,
+  placement,
   onSelect,
   onHover,
   onMove,
   editMode = false,
   children,
 }) {
-  const { toWorld, fromWorld, depthScale } = useStage()
+  const { floorY, fromFloorPoint, fromWorldAtZ } = useStage()
   const camera = useThree((state) => state.camera)
   const gl = useThree((state) => state.gl)
 
@@ -38,10 +40,9 @@ export default function Interactable({
     onMoveRef.current = onMove
   }, [onMove])
 
-  const [x, y, z] = toWorld(object.position[0], object.position[1], object.depth)
+  const { x, y, z, perspective, anchor, parallax } = placement
   const rotation = object.rotation.map(MathUtils.degToRad)
   // Scale is authored against the image plane; compensate for perspective.
-  const perspective = depthScale(object.depth)
   const scale = object.scale.map((value) => value * perspective)
 
   useEffect(() => {
@@ -60,14 +61,17 @@ export default function Interactable({
     return undefined
   }, [hovered, dragging, editMode])
 
-  // Drag in X/Y on the object's depth plane.
+  // Drag on the prop's anchor plane.
   useEffect(() => {
     if (!dragging) return undefined
 
     const raycaster = new Raycaster()
     const ndc = new Vector2()
     const point = new Vector3()
-    const plane = new Plane(new Vector3(0, 0, 1), -z)
+    const onFloor = anchor === 'floor'
+    const plane = onFloor
+      ? new Plane(new Vector3(0, 1, 0), -floorY)
+      : new Plane(new Vector3(0, 0, 1), -z)
 
     const handlePointerMove = (event) => {
       const rect = gl.domElement.getBoundingClientRect()
@@ -79,12 +83,13 @@ export default function Interactable({
       )
       raycaster.setFromCamera(ndc, camera)
 
-      if (raycaster.ray.intersectPlane(plane, point)) {
-        onMoveRef.current?.(
-          object.id,
-          fromWorld(point.x, point.y, object.depth),
-        )
-      }
+      if (!raycaster.ray.intersectPlane(plane, point)) return
+
+      const next = onFloor
+        ? fromFloorPoint(point.x, point.z)
+        : fromWorldAtZ(point.x, point.y, z)
+
+      onMoveRef.current?.(object.id, next)
     }
 
     const handlePointerUp = () => setDragging(false)
@@ -96,7 +101,17 @@ export default function Interactable({
       window.removeEventListener('pointermove', handlePointerMove)
       window.removeEventListener('pointerup', handlePointerUp)
     }
-  }, [dragging, camera, gl, z, object.id, object.depth, fromWorld])
+  }, [
+    dragging,
+    camera,
+    gl,
+    z,
+    anchor,
+    floorY,
+    object.id,
+    fromFloorPoint,
+    fromWorldAtZ,
+  ])
 
   useFrame(({ pointer }, delta) => {
     if (!group.current) return
@@ -106,7 +121,7 @@ export default function Interactable({
       return
     }
 
-    const depth = Math.max(object.depth, 0)
+    const depth = Math.max(parallax ?? 0, 0)
     const targetX = x + pointer.x * depth * PARALLAX_X
     const targetY = y + pointer.y * depth * PARALLAX_Y
 
