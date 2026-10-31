@@ -1,0 +1,18 @@
+:root {
+  font-family: 'Segoe UI', sans-serif;
+  color: #fff5e8;
+  background: #241b1a;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+#root {
+  min-height: 100svh;
+}
