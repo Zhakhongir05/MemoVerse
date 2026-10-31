@@ -10,10 +10,10 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange, autoPlay
   useEffect(()=>{latest.current=result},[result])
   const userId=user?.id
   const [creating,setCreating]=useState(false),[resume,setResume]=useState(false)
-  async function create() {
+  async function create(replace = false) {
     if(creating || syncBusy || memory.syncState!=='synced')return
     setCreating(true);setError('')
-    try { setResult(await preparePodcast(memory.id,undefined,{retryFailed:true}));setResume(true) }
+    try { setResult(await preparePodcast(memory.id,undefined,{retryFailed:true,regenerate:replace}));setResume(true) }
     catch(error){setError(error.message)}
     finally{setCreating(false)}
   }
@@ -53,7 +53,8 @@ export default function MemoryPodcast({ memory, user, onPlaybackChange, autoPlay
     {!error && result && !result.generation_enabled && !ready && <p role="status">{result.generation_reason==='memorycast_database_disabled' ? 'Podcast preparation is temporarily unavailable. You can still explore your world.' : result.generation_reason==='memorycast_providers_unconfigured' ? 'Podcast preparation is temporarily unavailable. You can still explore your world.' : 'Podcast preparation is temporarily unavailable. You can still explore your world.'}</p>}
     {!error&&!ready&&tour?.status==='pending'&&<p role="status">Preparing your podcast… You can explore while it finishes.</p>}
     {!error&&['failed','uncertain'].includes(tour?.status)&&<p role="status">Your included podcast needs recovery. Your journal is safe; no extra world generation is needed.</p>}
-    {allowCreate && userId && result && !ready && (!tour || tour.status==='failed') && <button className="mj-secondary" disabled={creating || syncBusy || memory.syncState!=='synced' || !result.generation_enabled} onClick={create}>{creating ? 'Preparing podcast…' : syncBusy || memory.syncState!=='synced' ? 'Syncing memory…' : tour ? 'Retry podcast' : 'Create podcast'}</button>}
+    {allowCreate && userId && result && !ready && (!tour || tour.status==='failed') && <button className="mj-secondary" disabled={creating || syncBusy || memory.syncState!=='synced' || !result.generation_enabled} onClick={()=>create()}>{creating ? 'Preparing podcast…' : syncBusy || memory.syncState!=='synced' ? 'Syncing memory…' : tour ? 'Retry podcast' : 'Create podcast'}</button>}
+    {allowCreate && !compact && ready && result.stale && <button type="button" className="mj-secondary" disabled={creating || syncBusy || memory.syncState!=='synced' || !result.generation_enabled} onClick={()=>create(true)}>{creating ? 'Re-recording…' : 'Update narration'}</button>}
     {!allowCreate&&!error&&result&&!tour&&<p role="status">Create your podcast from the saved memory page.</p>}
     {ready&&part&&<>
       {!compact && <><p className="mj-podcast-count">{chapter+1}/3</p><h3>{part.title}</h3><details className="mj-podcast-transcript"><summary>Transcript</summary><p>{part.narration}</p></details></>}

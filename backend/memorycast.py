@@ -16,7 +16,7 @@ from .memorycast_schema import TourRequest,context_for,fingerprint
 router=APIRouter(prefix='/api/memorycast',tags=['MemoryCast'])
 # The script step's whole budget. The writer's own provider calls finish well
 # inside it, and a writer that still runs long is replaced by a verbatim reading.
-SCRIPT_STEP_SECONDS=36
+SCRIPT_STEP_SECONDS=40
 
 def enabled():
     if os.getenv('MEMORYCAST_LIVE_ENABLED','false').lower()!='true':raise HTTPException(503,'New MemoryCast narration is disabled. Saved tours can still be replayed.')
@@ -104,7 +104,7 @@ async def perform_step(tour,store,provider):
             logging.getLogger(__name__).warning('memorycast_script_timeout memory=%s',context['memory_id'])
             from .memorycast_schema import verbatim_tour
             script=verbatim_tour(context)
-        update={'script':script,'message':'Personalized three-chapter script saved.'}
+        update={'script':script,'message':'Personalized three-chapter script saved.' if script.get('generated_by')!='verbatim' else 'Narration read from your saved words.'}
     else:
         index=step-len(photos)-1
         if not 0<=index<3:raise ValueError('Invalid audio step')

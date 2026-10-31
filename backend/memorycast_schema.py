@@ -90,7 +90,7 @@ def context_for(memory,user_id,language):
         if not isinstance(scene_objects,list):scene_objects=[]
         # AI scene planning is supporting artistic context, never memory evidence.
         visualization={'interpretation_only':True,'title':str(scene.get('title',''))[:160],'environment':str(scene.get('environment',''))[:80],'mood':str(scene.get('mood',''))[:80],'object_types':[str(o.get('type',''))[:80] for o in scene_objects[:30] if isinstance(o,dict)]}
-    return {'version':4,'visualization':visualization,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
+    return {'version':5,'visualization':visualization,'memory_id':memory['id'],'mood':mood,'language':language,'sources':sources,'anchors':anchors,'photos':photos,'world_id':world_id}
 
 def fingerprint(context):
     return hashlib.sha256(json.dumps(context,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
@@ -111,46 +111,80 @@ FALLBACK_LINES={'en':['This is part of the memory you kept, and it is still your
                       '그 순간은 다시 돌아올 때마다 여전히 당신 곁에 있습니다.',
                       '당신의 말과 당신의 시간 속에, 언제든 다시 돌아올 수 있습니다.']}
 
+# A short entry that opens with an instruction is a note-to-self, not a memory.
+META_PREFIXES=('write a','write an','write me','make a','make me','create a','add a','describe','generate a','draw me','show me')
+
+def _spoken(value,limit):
+    return ' '.join(str(value or '').split())[:limit]
+
+def _usable_story(story):
+    """Return the entry when it is a memory, never a bare instruction or a stub."""
+    text=_spoken(story,7000)
+    folded=text.casefold()
+    if len(text)<24 or len({character for character in folded if character.isalpha()})<3:return ''
+    if len(text)<60 and any(folded.startswith(prefix) for prefix in META_PREFIXES):return ''
+    return text
+
 def _sentences(text):
     parts=[part.strip() for part in re.split(r'(?<=[.!?…])\s+|\n+',text.strip()) if part.strip()]
     return parts or [text.strip()]
 
-def verbatim_tour(context):
-    """Cost-free narration from the saved words themselves.
+def _beats(text):
+    """Sentence-sized pieces; a run-on entry is cut at its own connectors."""
+    parts=[part.strip(' .,;:') for part in re.split(r'(?<=[.!?…])\s+|\n+|;\s*',text) if part.strip(' .,;:')]
+    if len(parts)<=1 and parts:
+        parts=[part.strip(' .,;:') for part in re.split(r',?\s+(?:and|while|but|then|so)\s+',parts[0]) if part.strip(' .,;:')]
+    return parts
 
-    Used only when the model-written tour cannot be grounded. Chapters are cut
-    at sentence boundaries, so a fallback reads complete thoughts from the
-    listener's own memory instead of inventing a story or tearing a phrase in
-    half. Chapters with no remaining source text are quiet, generic reflections.
+def _photo_bits(photo):
+    return [bit.strip(' .') for bit in photo.split(';') if len(bit.strip())>3][:4]
+
+def verbatim_tour(context):
+    """Cost-free narration from the saved words and the saved photograph.
+
+    Used only when the model-written tour cannot be grounded. Every chapter
+    keeps its own beat from this memory — the entry, a visible detail, the
+    title — so two different memories never share the same recording, and a
+    note-to-self is never spoken aloud. Chapters with no remaining source text
+    fall back to a quiet reflection.
     """
-    sources=context['sources']
-    story=sources.get('journal:story','').strip()
+    sources=context['sources'];language=context['language'];english=language=='en'
+    lines=FALLBACK_LINES[language]
+    story=_spoken(sources.get('journal:story',''),7000)
+    title=_spoken(sources.get('journal:title',''),120)
     photo_key=next((key for key in sorted(sources) if key.startswith('photo:') and sources[key].strip()),None)
-    photo=sources[photo_key].strip() if photo_key else ''
-    source_key='journal:story' if story else photo_key
+    photo=_spoken(sources[photo_key],2000) if photo_key else ''
     if not (story or photo):raise ValueError('No narration sources')
-    lines=FALLBACK_LINES[context['language']]
-    units=_sentences((story or photo)[:7000])
-    if len(units)>=3:
-        size=len(units)/3
-        parts=[' '.join(units[round(i*size):round((i+1)*size)]).strip() for i in range(3)]
-    elif len(units)==2:parts=[units[0],units[1],lines[2]]
-    else:parts=[units[0],lines[1],lines[2]]
-    parts=[part for part in parts if part] or [units[0]]
-    while len(parts)<3:parts.append(lines[len(parts)%len(lines)])
+    source_key='journal:story' if story else photo_key
+    beats=_beats(_usable_story(story))
+    bits=_photo_bits(photo)
+    def photo_sentence(bit):
+        bit=bit[:1].lower()+bit[1:]
+        return ('In the photograph, '+bit+'.') if english else ('사진 속에는 '+bit+'이(가) 있습니다.')
+    pool=[]
+    if title:pool.append(title+'.')
+    pool+= [beat if beat.endswith(('.','!','?','…')) else beat+'.' for beat in beats]
+    pool+= [photo_sentence(bit) for bit in bits]
+    pool=pool or [lines[0]]
+    closing=(title+' stays yours to return to, in your own words and your own time.') if english else (title+'은(는) 당신의 말과 시간 속에, 언제든 다시 돌아올 수 있습니다.')
+    if not title:closing=lines[2]
+    chunks=[[],[],[]]
+    for index,sentence in enumerate(pool[:9]):chunks[index%3].append(sentence)
     chapters=[]
-    for index,part in enumerate(parts[:3]):
-        narration=part.strip()
-        if len(narration)>2400:narration=narration[:2400].rsplit(' ',1)[0]
+    for index,chunk in enumerate(chunks):
+        narration=' '.join(chunk).strip()
+        if index==2:narration=(narration+' '+closing).strip()
         # Keep spoken text long enough for the audio contract without cutting words.
-        if len(narration)<40:narration=(narration+' '+lines[index%len(lines)]).strip()
-        evidence=[Excerpt(source_id=source_key,quote=units[0][:1200])]
+        if len(narration)<40:narration=(narration+' '+lines[index%3]).strip()
+        if len(narration)>2400:narration=narration[:2400].rsplit(' ',1)[0]
+        evidence=[Excerpt(source_id=source_key,quote=(story or photo)[:1200])]
         if story and photo and index<2:evidence.append(Excerpt(source_id=photo_key,quote=photo[:1200]))
-        if evidence[0].quote not in (story or photo):raise ValueError('Ungrounded fallback excerpt')
         chapters.append(DraftChapter(order=index+1,narration=narration,anchor_id=None,excerpts=evidence,ambience='quiet'))
-    quote=units[0][:500] if story else ''
-    draft=TourDraft(journal_reading=JournalReading(interpretation='Your own words, kept as written.',evidence_quote=quote),chapters=chapters)
-    return render_tour(draft,context)
+    reading_quote=story[:500] if story else ''
+    draft=TourDraft(journal_reading=JournalReading(interpretation='Your own words, kept as written.',evidence_quote=reading_quote),chapters=chapters)
+    result=render_tour(draft,context)
+    result['generated_by']='verbatim'
+    return result
 
 def render_tour(draft,context):
     if [c.order for c in draft.chapters]!=[1,2,3]:raise ValueError('Invalid chapter order')

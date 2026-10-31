@@ -16,7 +16,7 @@ from backend.main import app
 from backend.world_accounts import get_accounts
 from backend.memorycast import get_tour_provider
 from backend.memorycast_store import TourStore,get_tour_store
-from backend.memorycast_schema import context_for,fingerprint,TourDraft,render_tour
+from backend.memorycast_schema import context_for,fingerprint,TourDraft,render_tour,verbatim_tour
 from backend.memorycast_provider import TourProvider,audio_duration,normalize_wav
 
 A='11111111-1111-4111-8111-111111111111';B='22222222-2222-4222-8222-222222222222';M='33333333-3333-4333-8333-333333333333'
@@ -79,6 +79,19 @@ class Contracts(unittest.TestCase):
         self.assertEqual(audio_duration(wav()),1)
         for data in [b'fake-mp3',wav()[:-100],b'\0'*(8*1024*1024+1)]:
             with self.assertRaises((ValueError,wave.Error,EOFError)):audio_duration(data)
+    def test_verbatim_fallback_is_different_for_different_memories(self):
+        one=verbatim_tour(context_for(memory(),A,'en'))
+        other=verbatim_tour(context_for({**memory(),'title':'Morning train','story':'The train doors opened onto a cold platform that morning.'},A,'en'))
+        for index in range(3):
+            self.assertNotEqual(one['chapters'][index]['narration'],other['chapters'][index]['narration'])
+    def test_verbatim_fallback_never_speaks_a_note_to_self(self):
+        ctx=context_for({**memory(),'title':'hotel near the beach','story':'write a discreption for it'},A,'en')
+        ctx['sources']['photo:1']='A person in a white robe standing near a window.'
+        result=verbatim_tour(ctx)
+        spoken=' '.join(chapter['narration'] for chapter in result['chapters']).casefold()
+        self.assertNotIn('discreption',spoken)
+        self.assertIn('hotel near the beach',spoken)
+        self.assertIn('white robe',spoken)
 
 class Providers(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
@@ -122,19 +135,34 @@ class Providers(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('Take a breath',result['chapters'][0]['narration'])
             outputs.append(result)
         self.assertNotEqual(outputs[0]['chapters'][0]['narration'],outputs[1]['chapters'][0]['narration'])
-    async def test_photo_memory_without_photo_evidence_falls_back_to_verbatim_reading(self):
+    async def test_missing_photo_evidence_is_attached_instead_of_discarding_the_draft(self):
         ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']='A red chair.'
         create=AsyncMock(return_value=completion(draft(ctx,include_photo=False).model_dump()))
         pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
         result=await TourProvider(pipeline).script(ctx)
-        # The rejected model tour is replaced by the saved words, never invented prose.
-        self.assertEqual(len(result['chapters']),3)
-        self.assertEqual(result['chapters'][0]['evidence'][0]['source_id'],'journal:story')
+        # The saved photograph is audited evidence the server can attach itself.
+        self.assertEqual(result['generated_by'],'ai')
         for chapter in result['chapters']:
             for evidence in chapter['evidence']:
                 self.assertIn(evidence['quote'],ctx['sources'][evidence['source_id']])
         for chapter in result['chapters'][:2]:
             self.assertIn('photo:1',[evidence['source_id'] for evidence in chapter['evidence']])
+    async def test_paraphrased_reading_quote_is_repaired_to_real_written_evidence(self):
+        ctx=context_for(memory(),A,'en');value=draft(ctx).model_dump()
+        value['journal_reading']['evidence_quote']='listening to rain beside a desk'
+        create=AsyncMock(return_value=completion(value))
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(result['generated_by'],'ai')
+        self.assertIn(result['journal_reading']['evidence_quote'],ctx['sources']['journal:story'])
+    async def test_rejected_reply_gets_one_repair_attempt_that_is_used(self):
+        ctx=context_for(memory(),A,'en');value=draft(ctx).model_dump()
+        create=AsyncMock(side_effect=[completion('not a tour'),completion(value),completion(value)])
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(create.await_count,2)
+        self.assertEqual(result['generated_by'],'ai')
+        self.assertEqual(result['chapters'][0]['narration'],value['chapters'][0]['narration'])
     async def test_failed_edit_pass_keeps_the_grounded_draft(self):
         ctx=context_for(memory(),A,'en');value=draft(ctx).model_dump()
         create=AsyncMock(side_effect=[completion(value),completion('not a tour')])

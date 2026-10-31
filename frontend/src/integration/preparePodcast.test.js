@@ -62,3 +62,16 @@ test('explicit podcast action retries its reservation without any world request'
  assert.ok(calls.every(call=>!call.path.includes('world')))
  assert.equal(calls.find(call=>call.options.body).options.body.regenerate,false)
 })
+
+test('explicit update replaces a ready recording with a new reservation',async()=>{
+ let created=false
+ const calls=[]
+ const result=await preparePodcast('stale-podcast',async(path,options={})=>{
+  calls.push({path,options})
+  if(path.endsWith('/advance'))return {advanced:true,tour:{id:'new-tour',status:'ready'}}
+  if(options.method==='POST'){created=true;return {tour:{id:'new-tour',status:'pending'}}}
+  return {generation_enabled:true,tour:{id:created?'new-tour':'old-tour',status:created?'ready':'ready'}}
+ },{regenerate:true})
+ assert.equal(result.tour.id,'new-tour')
+ assert.equal(calls.find(call=>call.options.body).options.body.regenerate,true)
+})
