@@ -255,6 +255,7 @@ def parse_photo_analysis(result,limit=20,stats=None):
     if stats is not None:
         stats['vision_raw']=len(raw) if isinstance(raw,list) else 0
         stats['vision_objects']=len(objects)
+        stats['vision_excerpt']=json.dumps(data,ensure_ascii=False)[:900]
     colors=[c.strip() for c in data.get('colors') if isinstance(c,str) and c.strip() and len(c.strip())<=80] if isinstance(data.get('colors'),list) else []
     try:
         return PhotoAnalysis(objects=objects[:limit],
