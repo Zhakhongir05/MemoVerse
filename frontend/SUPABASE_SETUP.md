@@ -1,5 +1,15 @@
 # MemoVerse account setup
 
+**Current journal sync:** follow `SUPABASE_JOURNAL_SYNC.md` and run
+`supabase/004_journal_sync.sql` to enable cloud journal persistence. The journal now
+syncs signed-in entries and media, retaining IndexedDB as a cache/offline queue.
+
+**Journal update:** the default app now opens the IndexedDB journal, documented in
+`JOURNAL_INTEGRATION.md`. Supabase still provides optional sign-in, and the original
+studio's cloud save flow is retained. Journal entries are stored locally, without
+requiring a Supabase migration or syncing to the cloud. The older studio setup
+instructions below apply to that separate cloud flow.
+
 The frontend now supports email/password login, sign-up, confirmation emails,
 Google sign-in, sign-out, and saving/opening the latest 50 memories per account.
 Inputs stay local until you select **Save changes** in the studio toolbar.
@@ -36,7 +46,7 @@ In Authentication settings:
 
 - Enable the Email provider and email confirmations.
 - Set the minimum password length to at least 8.
-- Set Site URL to the development URL, e.g. `http://localhost:5173`.
+- Set Site URL to `https://memoverse05.vercel.app` for the hosted production project.
 - Add your exact development URL to allowed Redirect URLs. Include another port
   only if Vite actually uses it (e.g. `http://localhost:5174`).
 - Add your production URL when deploying. Configure custom SMTP for production
@@ -66,8 +76,9 @@ npm.cmd install
 npm.cmd run dev
 ```
 
-With no configuration, the login UI shows setup guidance and an explicit local demo
-option. The demo has no account and cannot save data to Supabase.
+The Explore Memories page is public. Sign in opens the account interface. Visitors
+can return to exploring without an account, even when Supabase is not configured.
+Guest inputs are not saved. Signing in opens a fresh account workspace.
 
 ## 5. Verify with two accounts
 
@@ -114,7 +125,8 @@ configured project to test. They have not been verified against a real project y
    Sign In / Providers → Google. Enable the provider and save. Keep the client
    secret in Supabase; do not add it to a VITE variable or commit it to Git.
 6. In Supabase URL Configuration, allow your app origin as a redirect URL and set
-   Site URL, e.g. `http://localhost:5173`. Add production URLs when deploying.
+   Site URL `https://memoverse05.vercel.app`. Keep localhost in the allowed redirect
+   list for development, rather than making it the production project's Site URL.
 7. Sign out of MemoVerse, select **Continue with Google**, choose your test account,
    and verify you return to the app. Test in a normal browser if the embedded browser
    blocks Google login. This signs in with a Google account; it does not read Gmail.
@@ -134,3 +146,31 @@ References:
 - https://supabase.com/docs/guides/getting-started/tutorials/with-react
 - https://supabase.com/docs/guides/database/postgres/row-level-security
 - https://supabase.com/docs/guides/storage/security/access-control
+
+## Vercel configuration (required for deployed login)
+
+The ignored .env.local only configures your computer. In Vercel, open your project →
+Settings → Environment Variables and add:
+
+- VITE_SUPABASE_URL: your Supabase Project URL.
+- VITE_SUPABASE_PUBLISHABLE_KEY: your Supabase publishable key.
+
+Select both Production and Preview if you use branch deployments. Use raw values
+without surrounding quotes. Redeploy after saving; Vite embeds these at build time.
+The client also supports VITE_SUPABASE_ANON_KEY for the older public anon key.
+Never add a service-role or secret key.
+
+In Supabase → Authentication → URL Configuration, set Site URL to your production
+Vercel origin and allow that exact origin in Redirect URLs. Also allow any preview
+origins you test, while retaining localhost for development. In Google Cloud, add
+the production origin to Authorized JavaScript origins. The authorized redirect URI
+remains your Supabase /auth/v1/callback URL. Enable Google's provider in Supabase
+with your OAuth Client ID and Secret as described above.
+
+If accounts are unavailable, check Vercel variable names, values, environment scopes,
+and redeploy. If Google sign-in starts but fails or redirects to the wrong host,
+check the provider and redirect settings.
+
+References:
+- https://vercel.com/docs/environment-variables
+- https://supabase.com/docs/guides/auth/redirect-urls

@@ -5,7 +5,6 @@ import useMemorySave from './useMemorySave'
 
 const MOODS = ['Nostalgic', 'Joyful', 'Melancholic']
 const MAX_IMAGE = 10 * 1024 * 1024
-const MAX_AUDIO = 25 * 1024 * 1024
 
 // Replace this adapter with the backend request. Reject on failure; honor signal.
 // Object URLs are local previews only: upload the actual File in production.
@@ -33,18 +32,16 @@ function Portal({ small = false }) {
 
 /** SceneRenderer receives { scene, imageUrl, mood }. Mount the team's R3F Canvas here.
  * generateMemory receives { file, audioFile, description, signal } and returns scene JSON.
- * Audio is not connected. The optional renderer may display a predefined demo.
+ * The optional renderer may display a predefined demo.
  */
-export default function Dashboard({ SceneRenderer, generateMemory = generateMockMemory, user, onSignOut }) {
-  const [screen, setScreen] = useState('landing')
+export default function Dashboard({ SceneRenderer, generateMemory = generateMockMemory, user, onSignOut, onSignIn, onExplore, checkingAuth, initialScreen = 'landing' }) {
+  const [screen, setScreen] = useState(initialScreen)
   const [sceneExpanded, setSceneExpanded] = useState(false)
   const [inputsOpen, setInputsOpen] = useState(false)
   const studioScreen = useRef('upload')
   const [file, setFile] = useState(null)
   const [imageUrl, setImageUrl] = useState('')
   const [audioFile, setAudioFile] = useState(null)
-  const [audioUrl, setAudioUrl] = useState('')
-  const [audioPlaybackError, setAudioPlaybackError] = useState('')
   const [description, setDescription] = useState('')
   const [errors, setErrors] = useState({})
   const [scene, setScene] = useState(null)
@@ -56,7 +53,6 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
   const [accountError, setAccountError] = useState('')
   const controller = useRef(null)
   const fileInput = useRef(null)
-  const audioInput = useRef(null)
   const heading = useRef(null)
   const isMock = generateMemory === generateMockMemory
   const pending = screen === 'generation' && !failure
@@ -70,12 +66,6 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     setImageUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [file])
-  useEffect(() => {
-    if (!audioFile) { setAudioUrl(''); return }
-    const url = URL.createObjectURL(audioFile)
-    setAudioUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [audioFile])
   useEffect(() => () => controller.current?.abort(), [])
   useEffect(() => { heading.current?.focus() }, [screen])
   useEffect(() => {
@@ -91,18 +81,6 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     }
     setFile(next)
     setErrors(previous => ({ ...previous, image: '' }))
-  }
-
-  function selectAudio(next) {
-    if (!next) return
-    const allowed = /\.(mp3|wav|m4a|ogg|webm)$/i
-    if (!allowed.test(next.name) || (next.type && !next.type.startsWith('audio/') && next.type !== 'video/webm' && next.type !== 'video/mp4') || !next.size || next.size > MAX_AUDIO) {
-      setErrors(previous => ({ ...previous, audio: 'Choose a non-empty MP3, WAV, M4A, OGG, or WebM audio file up to 25 MB.' }))
-      return
-    }
-    setAudioFile(next)
-    setAudioPlaybackError('')
-    setErrors(previous => ({ ...previous, audio: '' }))
   }
 
   async function generate(event) {
@@ -147,7 +125,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     setDescription(memory.description)
     setMood(MOODS.includes(memory.mood) ? memory.mood : 'Nostalgic')
     setScene(memory.scene)
-    setErrors({}); setAudioPlaybackError(''); setFailure('')
+    setErrors({}); setFailure('')
     setInputsOpen(false)
     setScreen(memory.scene ? 'world' : 'upload')
   }
@@ -157,7 +135,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     controller.current?.abort()
     memorySave.newDraft()
     setFile(null); setAudioFile(null); setDescription(''); setMood('Nostalgic'); setScene(null)
-    setErrors({}); setAudioPlaybackError(''); setFailure(''); setScreen('upload')
+    setErrors({}); setFailure(''); setScreen('upload')
   }
 
   return <main className={`memoverse mv-screen-${screen} mv-mood-${mood.toLowerCase()} ${sceneExpanded ? 'mv-scene-expanded' : ''} ${inputsOpen ? 'mv-inputs-open' : ''}`}>
@@ -165,16 +143,16 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
     <div className="mv-particles" aria-hidden="true">{Array.from({ length: 22 }, (_, i) => <i key={i} style={{ '--x': `${(i * 47) % 100}%`, '--delay': `${i * -0.73}s`, '--duration': `${8 + i % 6}s` }} />)}</div>
     <header className="mv-header">
       <button className="mv-brand" onClick={() => { controller.current?.abort(); setScreen('landing') }} aria-label="MemoVerse home"><span className="mv-brand-mark">◈</span> MemoVerse<span className="mv-brand-dot">.</span></button>
-      <nav className="mv-view-nav" aria-label="Memory navigation">
-        <button aria-current={['upload', 'generation', 'world'].includes(screen) ? 'page' : undefined} disabled={libraryBusy || pending} onClick={() => setScreen(studioScreen.current)}>Studio</button>
+      {screen !== 'landing' && <nav className="mv-view-nav" aria-label="Memory navigation">
+        <button aria-current={['upload', 'generation', 'world'].includes(screen) ? 'page' : undefined} disabled={libraryBusy || pending || checkingAuth} onClick={() => user ? setScreen(studioScreen.current) : onSignIn?.()}>Studio</button>
         {user && <button aria-current={screen === 'library' ? 'page' : undefined} disabled={pending || libraryBusy} onClick={() => { if (screen !== 'landing' && screen !== 'library') studioScreen.current = screen; setScreen('library') }}>Saved memories</button>}
-      </nav>
+      </nav>}
       {user ? <div className="mv-account"><span title={user.email}>{user.email}</span><button disabled={accountBusy || libraryBusy || saving} onClick={async () => {
         if (memorySave.dirty && !window.confirm('You have unsaved changes. Sign out and discard them?')) return
         setAccountBusy(true); setAccountError('')
         try { await onSignOut() }
         catch { setAccountError('Sign out failed. Please try again.'); setAccountBusy(false) }
-      }}>{accountBusy ? 'Signing out…' : 'Sign out'}</button></div> : <span className="mv-edition">LOCAL DEMO <span>01</span></span>}
+      }}>{accountBusy ? 'Signing out…' : 'Sign out'}</button></div> : screen !== 'landing' && <div className="mv-account"><button onClick={onSignIn} disabled={checkingAuth}>{checkingAuth ? 'Checking session…' : 'Sign in'}</button></div>}
     </header>
     {accountError && <p className="mv-account-error" role="alert">{accountError}</p>}
 
@@ -188,8 +166,8 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
       <div className="mv-landing-copy"><p className="mv-eyebrow"><span /> YOUR PAST, BEAUTIFULLY PRESENT</p>
         <h1 ref={heading} tabIndex={-1}>Don’t just remember it.<br /><em>Step inside it.</em></h1>
         <p className="mv-lede">Some moments never really leave us.<br />Turn a photograph into a world you can return to.</p>
-        <button className="mv-primary" onClick={() => setScreen('upload')}>Enter Your Memories <span aria-hidden="true">↗</span></button>
-        <p className="mv-fine">One photograph. A thousand feelings.</p>
+        <button className="mv-primary" disabled={checkingAuth} onClick={() => onExplore ? onExplore() : user ? setScreen('upload') : onSignIn?.()}>Explore Memories <span aria-hidden="true">↗</span></button>
+        <p className="mv-fine">One photograph. A thousand feelings.{!user && ' Sign in to explore and save your memories.'}</p>
       </div>
       <div className="mv-landing-art"><Portal /><span className="mv-art-caption">THE WAY BACK IS THROUGH</span></div>
       <footer className="mv-landing-footer"><span>IMAGINED WITH AI. <strong>FELT BY YOU.</strong></span><span>01 — THE BEGINNING</span></footer>
@@ -200,7 +178,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
         <div className="mv-section-heading"><p className="mv-eyebrow">YOUR MEMORY STUDIO</p><h1 ref={screen === 'upload' ? heading : undefined} tabIndex={-1}>A moment. <em>A world.</em></h1></div>
         <div className="mv-studio-actions"><button className="mv-mobile-input-toggle" aria-expanded={inputsOpen} aria-controls="mv-studio-inputs" onClick={() => setInputsOpen(value => !value)}>{inputsOpen ? 'Close inputs' : 'Edit inputs'}</button><button className="mv-expand-scene" aria-pressed={sceneExpanded} onClick={() => { setSceneExpanded(value => !value); setInputsOpen(false) }}>{sceneExpanded ? 'Show inputs ↙' : 'Expand scene ↗'}</button></div>
       </div>
-      <div className="mv-workspace-grid"><div id="mv-studio-inputs" className="mv-input-column" role="region" aria-label="Memory inputs" tabIndex={0}><form className="mv-upload-grid" onSubmit={generate} noValidate><fieldset className="mv-input-fields" disabled={pending || libraryBusy || accountBusy}><legend className="mv-sr-only">Photograph, audio, and memory description</legend>
+      <div className="mv-workspace-grid"><div id="mv-studio-inputs" className="mv-input-column" role="region" aria-label="Memory inputs" tabIndex={0}><form className="mv-upload-grid" onSubmit={generate} noValidate><fieldset className="mv-input-fields" disabled={pending || libraryBusy || accountBusy}><legend className="mv-sr-only">Photograph and memory description</legend>
         <div className="mv-glass mv-photo-panel"><div className="mv-panel-label"><span>01</span><h2>Your photograph</h2></div>
           <input ref={fileInput} id="mv-photo" className="mv-file-input" type="file" accept="image/jpeg,image/png,image/webp" aria-label="Choose a memory photograph" aria-invalid={!!errors.image} aria-describedby="mv-photo-help mv-image-error" onChange={event => { selectImage(event.target.files?.[0]); event.target.value = '' }} />
           {imageUrl ? <div className="mv-image-preview"><img src={imageUrl} alt="Your selected memory" /><div className="mv-image-actions"><button type="button" onClick={() => fileInput.current?.click()}>Replace</button><button type="button" onClick={() => setFile(null)}>Remove</button></div></div> : <button type="button" className={`mv-dropzone ${dragging ? 'mv-dragging' : ''}`} onClick={() => fileInput.current?.click()} onDragOver={event => { event.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={event => { event.preventDefault(); setDragging(false); selectImage(event.dataTransfer.files?.[0]) }}><span className="mv-upload-symbol" aria-hidden="true">＋</span><strong>Bring a moment into focus</strong><span>Drop your photograph here, or browse</span></button>}
@@ -208,25 +186,12 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
           <p id="mv-image-error" className="mv-error" role="alert">{errors.image}</p>
         </div>
         <div className="mv-glass mv-description-panel"><div className="mv-panel-label"><span>02</span><h2>The story behind it</h2></div><label htmlFor="mv-description">What do you remember?</label><textarea id="mv-description" value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} aria-invalid={!!errors.description} aria-describedby="mv-description-help mv-description-error" placeholder="We were at my grandmother’s house. The windows were open, the room smelled of summer rain, and somewhere a radio was playing…" /><div className="mv-textarea-meta"><span id="mv-description-help">Start with the details you can still feel.</span><span>{description.length}/2000</span></div><p id="mv-description-error" className="mv-error" role="alert">{errors.description}</p></div>
-        <div className="mv-glass mv-audio-panel">
-          <div className="mv-panel-label"><span>03</span><h2>Audio <span className="mv-optional">Optional</span></h2></div>
-          <label htmlFor="mv-audio">Memory audio <span className="mv-fine">(optional)</span></label>
-          <input ref={audioInput} id="mv-audio" className="mv-audio-input" type="file" accept=".mp3,.wav,.m4a,.ogg,.webm,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm" aria-invalid={!!errors.audio} aria-describedby="mv-audio-help mv-audio-error" onChange={event => { selectAudio(event.target.files?.[0]); event.target.value = '' }} />
-          <p id="mv-audio-help" className="mv-fine">Add a voice note or a sound from your memory. MP3, WAV, M4A, OGG or WebM · Up to 25 MB.</p>
-          {audioFile && <div className="mv-audio-preview">
-            <p className="mv-audio-filename">{audioFile.name}</p>
-            {audioUrl && <audio key={audioUrl} src={audioUrl} controls preload="metadata" aria-label="Preview your memory audio" onError={() => setAudioPlaybackError('This browser could not play the file. Try an MP3 or WAV recording.')} />}
-            <div className="mv-audio-actions"><button type="button" onClick={() => audioInput.current?.click()}>Replace audio</button><button type="button" onClick={() => { setAudioFile(null); setAudioPlaybackError(''); setErrors(previous => ({ ...previous, audio: '' })) }}>Remove audio</button></div>
-          </div>}
-          <p id="mv-audio-error" className="mv-error" role="alert">{errors.audio || audioPlaybackError}</p>
-          <p className="mv-fine">Audio transcription and AI processing are not connected. Please also describe your memory above.</p>
-        </div>
         <div className="mv-submit-panel"><div className="mv-submit-actions">{user && <button type="button" className="mv-save-button" disabled={saving || libraryBusy || accountBusy || !memorySave.dirty} onClick={memorySave.save}>{saving ? 'Saving…' : memorySave.dirty ? 'Save changes' : memorySave.saved ? 'Saved ✓' : 'Save changes'}</button>}<button className="mv-primary" type="submit">{pending ? 'Generating…' : scene ? 'Regenerate My Memory' : 'Generate My Memory'} <span aria-hidden="true">✧</span></button></div><p className="mv-fine">{user ? 'Use Save changes to store your inputs privately. Scene generation is still a demo.' : isMock ? 'Local demo · Inputs are not saved to a server.' : 'Your inputs will be sent for generation.'}</p></div>
       </fieldset></form>
       {user && <div className="mv-autosave mv-glass">
         <p role="status">{memorySave.status === 'saving' ? 'Saving to your account…' : memorySave.status === 'saved' ? '✓ All changes saved privately' : memorySave.status === 'error' ? 'Changes have not been saved.' : memorySave.dirty ? 'Unsaved changes · Select Save changes.' : 'Select Save changes when your memory is ready.'}</p>
         {memorySave.status === 'error' && <><p role="alert" className="mv-error">{memorySave.error}</p><button type="button" onClick={memorySave.save}>Retry saving</button></>}
-        <p className="mv-fine">Photo and audio upload to private storage. Your story, mood, and scene data save to your database.</p>
+        <p className="mv-fine">Photographs upload to private storage. Your story, mood, and scene data save to your database.</p>
       </div>}
       </div>
       <div className="mv-preview-panel mv-glass" aria-label="Memory world preview">
@@ -246,7 +211,7 @@ export default function Dashboard({ SceneRenderer, generateMemory = generateMock
       <div className="mv-scene-slot">{SceneRenderer ? <SceneRenderer scene={scene} imageUrl={imageUrl} mood={mood} /> : <div className="mv-scene-placeholder"><div className="mv-world-haze" />{imageUrl && <img className="mv-world-photo" src={imageUrl} alt="Your memory photograph, displayed as a preview" />}<div className="mv-scene-notice"><span className="mv-eyebrow">YOUR WORLD, WAITING TO COME ALIVE</span><h1 ref={heading} tabIndex={-1}>Stay a little <em>longer.</em></h1><p>Photograph preview · 3D renderer not connected</p><p className="mv-fine">This space is reserved for the interactive memory world.</p></div></div>}</div>
       <div className="mv-world-top"><button className="mv-glass mv-back" onClick={backToUpload}>← Your memory</button><span className="mv-status">{SceneRenderer ? 'DEMO 3D ROOM' : scene?.source === 'mock' ? 'MOCK SCENE' : 'MEMORY WORLD'}</span></div>
       <aside className="mv-memory-info mv-glass"><p className="mv-eyebrow">A MOMENT, HELD IN LIGHT</p><h2 ref={heading} tabIndex={-1}>{scene?.title || 'Your memory'}</h2><p>{description}</p>{SceneRenderer && <p className="mv-fine">Predefined demo room · Your uploaded memory does not change its geometry yet.</p>}</aside>
-      <div className="mv-world-controls mv-glass"><div className="mv-sound-controls"><div><span>Narration</span><button disabled aria-label="Narration unavailable">▷ <span>Not connected</span></button></div><div><span>Ambient sound</span><button disabled aria-label="Ambient sound unavailable">♫ <span>Not connected</span></button></div></div><fieldset className="mv-moods"><legend>SenseShift <span>Set the feeling</span></legend><div>{MOODS.map(value => <label key={value} className={mood === value ? 'mv-selected' : ''}><input type="radio" name="mv-mood" value={value} checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</div></fieldset><p className="mv-fine mv-controls-note">{SceneRenderer ? 'SenseShift adjusts the demo room’s ambient light. Audio is not connected. Drag to orbit; scroll or pinch to zoom.' : 'Mood changes the preview lighting. Interactive 3D and audio await integration.'}</p></div>
+      <div className="mv-world-controls mv-glass"><fieldset className="mv-moods"><legend>SenseShift <span>Set the feeling</span></legend><div>{MOODS.map(value => <label key={value} className={mood === value ? 'mv-selected' : ''}><input type="radio" name="mv-mood" value={value} checked={mood === value} onChange={() => setMood(value)} /><span>{value}</span></label>)}</div></fieldset><p className="mv-fine mv-controls-note">{SceneRenderer ? 'SenseShift adjusts the demo room’s ambient light. Audio is not connected. Drag to orbit; scroll or pinch to zoom.' : 'Mood changes the preview lighting. Interactive 3D and audio await integration.'}</p></div>
     </section>}
       </div></div>
     </section>}
