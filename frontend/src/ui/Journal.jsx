@@ -1,3 +1,4 @@
+import {savedWorldId,rememberWorld,clearWorldLocation} from './savedWorldLocation.js'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatMemoryDate, journeySteps, listEntries, localDate, markEntryDeleted, MOODS, saveEntry, validateEntry } from './journalStore'
 import { importGuestEntries, syncJournal } from './journalCloud'
@@ -66,7 +67,16 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const photoInput = useRef(null)
   const alive = useRef(false)
   const saveLock = useRef(false)
+  const resumeWorld = useRef(savedWorldId())
 
+  useEffect(()=>{
+    if(!resumeWorld.current||!hasAccount||loading||syncing||loadedOwner.current!==owner)return
+    const entry=entries.find(item=>item.id===resumeWorld.current)
+    resumeWorld.current=null
+    if(!entry){clearWorldLocation();return}
+    setSelected(entry);setDemo(false);setSymbolic(false);setGenerationRequest(null)
+    setView(entry.world?.source==='worldlabs'?'relive':'prepare')
+  },[entries,hasAccount,loading,syncing,owner])
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   useEffect(() => { editing.current = dirty }, [dirty])
   useEffect(() => {
@@ -129,14 +139,17 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   }
   function navigate(next) {
     if (!canLeave()) return
+    clearWorldLocation()
     setDirty(false); setError(''); setInputError(''); setView(next)
   }
   function createMemory() {
     if (!canLeave()) return
+    clearWorldLocation()
     setDraft(emptyDraft()); setDirty(false); setFieldErrors({}); setError(''); setInputError(''); setNotice(''); setView('create')
   }
   function openMemory(entry) {
     if (!canLeave()) return
+    clearWorldLocation()
     setSelected(entry); setActivePhoto(0); setDirty(false); setView('detail'); setError('')
   }
   function change(key, value) {
@@ -223,7 +236,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     if (!canLeave()) return false
     setDirty(false); return true
   }
-  function relive(mode, useSymbolic = false) { setSymbolic(useSymbolic); setJourneyMode(mode); setActiveStep(0); setView('relive'); setNotice('') }
+  function relive(mode, useSymbolic = false) { if(useSymbolic)clearWorldLocation();else rememberWorld(selected?.id);setSymbolic(useSymbolic); setJourneyMode(mode); setActiveStep(0); setView('relive'); setNotice('') }
 
   if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView(selected ? 'detail' : 'journal')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
 
@@ -272,16 +285,16 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
             setDemo(false)
             // Always resolve the authoritative journal binding and fresh private assets first.
             if(!user){onSignIn?.();return}
-            setGenerationRequest(crypto.randomUUID());setView('prepare')
+            rememberWorld(selected.id);setGenerationRequest(crypto.randomUUID());setView('prepare')
           }}>{selected.world?.source==='worldlabs' ? 'Enter Memory World ✧' : 'Relive in 3D ✧'}</button></div>
         </div></div></section>}
 
-    {view === 'prepare' && selected && <RelivePreparation generationRequest={generationRequest} key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
+    {view === 'prepare' && selected && <RelivePreparation generationRequest={generationRequest} key={selected.id} onSample={() => { setSelected(current => ({...current,world:{...existingWorld,source:'sample'}})); setDemo(true); relive('free') }} user={user} Photo={Photo} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => {clearWorldLocation();setView('detail')}} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
       let saved = await saveEntry(owner, { ...selected, world: { ...result.world, ...(result.tour ? { guidedTour: result.tour } : {}), ...(typeof result.story === 'string' ? { preparedStory: result.story } : {}) }, story: selected.story, scene: result.scene || selected.scene, syncState: user ? 'pending' : 'local' })
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }
     }} />}
-    {view === 'relive' && selected && <ImmersiveMemory symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) setView(demo ? 'journal' : 'detail') }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
+    {view === 'relive' && selected && <ImmersiveMemory symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) {clearWorldLocation();setView(demo ? 'journal' : 'detail')} }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
 
   </main>
 }

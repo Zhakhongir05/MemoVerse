@@ -2,19 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {database,A,B} from './world_database_fixture.mjs';
-test('two historical unknowns block a fresh account; confirmed rejection restores slots and budget once',async()=>{
+test('held unknowns do not block other work; confirmed rejection restores slots and budget once',async()=>{
  const d=await database();try{
   await d.db.exec('update world_generation_demo set max_in_flight=2');
   const first=await d.reserve(A,'a'),second=await d.reserve(B,'b');
   for(const [owner,r] of [[A,first],[B,second]])await d.rpc('mv_world_finish',{p_user_id:owner,p_job_id:r.job.job_id,p_lease:null,p_update:{status:'unknown'}});
-  const blocked=await d.reserve(A,'c');assert.equal(blocked.error,'review_required');
+  const allowed=await d.reserve(B,'c');assert.equal(allowed.fresh,true);
   for(const [owner,r] of [[A,first],[B,second]]){
    const p={p_user_id:owner,p_job_id:r.job.job_id,p_lease:null,p_update:{status:'failed',rejected:true,diagnostics:{http_status:422,source:'verified-runtime-log'}}};
    assert.equal((await d.rpc('mv_world_finish',p)).allowance_released,true);await d.rpc('mv_world_finish',p);
-   assert.equal((await d.rpc('mv_world_account',{p_user_id:owner})).remaining,3);
+   assert.equal((await d.rpc('mv_world_account',{p_user_id:owner})).remaining,owner===A?3:2);
   }
-  assert.equal((await d.db.query('select reserved_credits from world_generation_demo')).rows[0].reserved_credits,0);
-  assert.equal((await d.db.query('select count(*)::int as n from world_generation_jobs')).rows[0].n,2);
+  assert.equal((await d.db.query('select reserved_credits from world_generation_demo')).rows[0].reserved_credits,1580);
+  assert.equal((await d.db.query('select count(*)::int as n from world_generation_jobs')).rows[0].n,3);
   assert.equal((await d.reserve(A,'a')).fresh,true);
  }finally{await d.db.close();}
 });

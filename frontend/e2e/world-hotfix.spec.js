@@ -24,21 +24,18 @@ test('first Relive submits once, renders its world and reopens it after reload f
  await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
  await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
  const worldId=await page.locator('[data-world-id]').getAttribute('data-world-id');
- await page.reload();await page.getByRole('button',{name:'Explore Memories',exact:true}).click();
- await page.getByRole('button',{name:/Open Focused production world test/}).click();
- await page.getByRole('button',{name:'Enter Memory World ✧',exact:true}).click();
- await page.getByRole('button',{name:'Explore Freely ↗',exact:true}).click();
+ const pollsBefore=(await stats(request)).polls;
+ await page.reload();
  await expect(page.locator('[data-world-id]')).toHaveAttribute('data-world-id',worldId);
  await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
+ expect((await stats(request)).polls).toEqual(pollsBefore);
 });
 test('refresh resumes a pending journal job instead of resubmitting',async({page,request})=>{
  await setup(page,1);await save(page,'Pending world recovery');const before=(await stats(request)).submitted;
  await page.getByRole('button',{name:'Relive in 3D ✧',exact:true}).click();
  await expect.poll(async()=>(await stats(request)).submitted).toBe(before+1);
- await page.reload();await page.getByRole('button',{name:'Explore Memories',exact:true}).click();
- await page.getByRole('button',{name:/Open Pending world recovery/}).click();
- await page.getByRole('button',{name:'Relive in 3D ✧',exact:true}).click();
+ await page.reload();
  await expect(page.getByRole('heading',{name:'Enter Memory World',exact:true})).toBeVisible({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
 });

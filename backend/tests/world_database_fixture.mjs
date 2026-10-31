@@ -10,6 +10,7 @@ export async function database(){
  await db.exec(`create table public.journal_entries(id uuid primary key,user_id uuid references auth.users(id),title text,memory_date date,story text default '',mood text,photos jsonb default '[]',audio jsonb,scene jsonb,world jsonb,created_at timestamptz default now(),updated_at timestamptz default now(),deleted_at timestamptz);`);
  await db.exec(await readFile(new URL('../../frontend/supabase/012_journal_world_jobs.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../../frontend/supabase/013_rejected_world_slots.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../../frontend/supabase/015_review_reservations_not_active.sql',import.meta.url),'utf8'));
  await db.exec(`update public.world_generation_demo set enabled=true,starts_at=now()-interval '1 minute',expires_at=now()+interval '29 days',credit_budget=100000,max_new_per_hour=100,max_new_per_day=100,max_in_flight=100;`);
  const functions={mv_world_config:[],mv_world_account:['p_user_id'],mv_world_reserve:['p_user_id','p_submission','p_job_id'],mv_world_poll:['p_user_id','p_job_id','p_lease'],mv_world_finish:['p_user_id','p_job_id','p_lease','p_update'],mv_world_memory:['p_user_id','p_memory_id'],mv_world_reserve_memory:['p_user_id','p_memory_id','p_photo_path','p_story','p_submission','p_job_id']};
  return {db,async rpc(name,args={}){

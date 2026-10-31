@@ -4,9 +4,10 @@ import AuthGate from './ui/AuthGate'
 const Journal=lazy(()=>import('./ui/Journal'))
 import { lazy,Suspense,useState } from 'react'
 import JournalWorld from './integration/JournalWorldViewer.jsx'
+import {savedWorldId} from './ui/savedWorldLocation.js'
 
 function MemoryExperience({ user, signOut, onSignIn, checking, initialScreen, guestAccess }) {
-  const [journalOpen, setJournalOpen] = useState(initialScreen === 'journal')
+  const [journalOpen, setJournalOpen] = useState(initialScreen === 'journal' || !!savedWorldId())
   if ((user && journalOpen) || guestAccess) return <Suspense fallback={<p role="status">Opening your journal…</p>}><Journal user={user} onSignOut={signOut} onSignIn={onSignIn} checkingAuth={checking} SceneRenderer={ScenePreview} LegacyStudio={Dashboard} WorldViewer={JournalWorld} /></Suspense>
   return <Dashboard user={user} onSignOut={signOut} onSignIn={onSignIn} checkingAuth={checking} onExplore={() => user ? setJournalOpen(true) : onSignIn()} SceneRenderer={ScenePreview} />
 }
