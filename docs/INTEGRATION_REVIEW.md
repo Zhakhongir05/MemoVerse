@@ -11,7 +11,7 @@ Repository: https://github.com/sujamahat/MemoVerse-1 . Integration branch: integ
 | feature/ai-backend | 24b335a | Validated AI scene and furniture manifest endpoint |
 | codex/production-image-worlds | 6c7b56d | Production provider/API fixes, asynchronous jobs, dynamic generated-world assets, server-enforced three-world quotas, budget and rate limits |
 | feature/3d-world | 4ef1805 | Complete grounded diorama preserved in frontend/src/diorama |
-| feature/sensory | 24b094c | Photo-depth renderer, speech tour and hotspots preserved in frontend/src/sensory |
+| photo-depth preview | 24b094c | Photo-depth renderer, speech tour and hotspots preserved in frontend/src/photoDepth |
 | codex/immersive-memory-experience | 890a6e9 | Immersive World Labs viewer, symbolic scene integration and feasibility/verification documentation |
 
 The frontend, hybrid and AI branches were already ancestors of a02496b. The remaining branch histories are incorporated through merge commits, with functionality reconciled rather than overwritten.
@@ -20,7 +20,7 @@ The frontend, hybrid and AI branches were already ancestors of a02496b. The rema
 
 Keep the existing Supabase authentication/database, latest guest-login fix, journal persistence and latest frontend layout. Connect placeholder scene generation to the strict production backend. Pass generated assets into the existing World Labs viewer instead of always opening the saved sample. Retain the latest hybrid photo-proposal and bounds fitting implementation, while sample furniture is never injected into a newly generated world by default. Preserve the production glTF collider coordinate correction; raw splats receive capture-frame rotation but glTF colliders are already Y-up.
 
-Keep the sensory and grounded diorama renderers as clearly labelled alternatives; do not replace the World Labs viewer or weaken backend scene validation with an incompatible sensory schema. Preserve the seven strict symbolic object types and honest provenance/errors. Photo-depth previews are not labelled as true reconstruction.
+Keep the photo-depth and grounded diorama renderers as clearly labelled alternatives; do not replace the World Labs viewer or weaken backend scene validation with an incompatible preview schema. Preserve the seven strict symbolic object types and honest provenance/errors. Photo-depth previews are not labelled as true reconstruction.
 
 The newest frontend introduced another allowance/Edge Function implementation. Plans, photo information and generation controls now read one backend account ledger. The detail page explains the photo transfer and allowance cost. The user’s Relive My Memory action starts a real job and opens its generated world when complete; simply browsing a journal entry does not submit. Saved worlds reopen without submission. Errors, disabled generation and exhausted allowance never silently select the symbolic fallback. The old Edge Function is a no-charge 410 compatibility response, preventing independent allowances/providers. Historical legacy usage is retained by migration 009 rather than reset. The paid pack remains a local mock checkout: no real payment, allowance grant or provider job occurs after simulated success.
 

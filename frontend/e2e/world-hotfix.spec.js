@@ -22,6 +22,8 @@ test('first Relive submits once, renders its world and reopens it after reload f
  expect((await stats(request)).submitted).toBe(before+1);
  await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
  await expect(page.locator('[data-world-state="ready"]')).toBeVisible({timeout:30000});
+ await expect(page.getByRole('button',{name:/Senses on|Senses off|Sensory pass/})).toHaveCount(0);
+ await expect(page.locator('.sense-card,.sense-play,[data-sense]')).toHaveCount(0);
  const worldId=await page.locator('[data-world-id]').getAttribute('data-world-id');
  const pollsBefore=(await stats(request)).polls;
  await page.reload();
@@ -31,7 +33,7 @@ test('first Relive submits once, renders its world and reopens it after reload f
  expect((await stats(request)).polls).toEqual(pollsBefore);
  // The journal must show the saved API world, even when its source photo exists.
  const writes=[];
- page.on('request',r=>{if(r.method()==='POST' && /\/api\/(journal|world-|generate-enhancements|sensory-cues)/.test(r.url()))writes.push(r.url())});
+ page.on('request',r=>{if(r.method()==='POST' && /\/api\/(journal|world-|generate-enhancements)/.test(r.url()))writes.push(r.url())});
  await page.getByRole('button',{name:'Back to memory',exact:true}).click();
  await page.getByRole('button',{name:'← Back to My Journal',exact:true}).click();
  const preview=page.locator('.jh-world [data-world-preview="true"]');

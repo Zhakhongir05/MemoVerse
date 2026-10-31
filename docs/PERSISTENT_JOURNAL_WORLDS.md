@@ -9,7 +9,7 @@ The team merged additional account generation/viewer functionality during implem
 
 ## Reused functionality
 
-Existing Google/Supabase auth, `journal_entries`, private `memory-assets`, Journal creation/editing/date timeline, cloud sync, and local IndexedDB remain in use. Journal saves still never submit a World Labs job. Existing OpenAI/DeepSeek endpoints, furniture catalog, Studio, diorama/sensory renderers and World Labs sample are preserved.
+Existing Google/Supabase auth, `journal_entries`, private `memory-assets`, Journal creation/editing/date timeline, cloud sync, and local IndexedDB remain in use. Journal saves still never submit a World Labs job. Existing OpenAI/DeepSeek endpoints, furniture catalog, Studio, diorama/photo-depth renderers and World Labs sample are preserved.
 
 The existing `world_generation_jobs`, `world_generation_demo`, account quota/rate/budget RPCs, provider client and operation parsing are extended rather than replaced. Account/Studio legacy endpoints remain available. The previous independent credit allowance remains retired under migration 009; this feature does not reset usage or create another allowance.
 

@@ -15,7 +15,3 @@
 .im-audio-status{position:absolute;bottom:110px;left:50%;transform:translateX(-50%);max-width:min(90vw,400px)}
 .im-audio-status .mj-podcast{padding:0;background:none;border:0;box-shadow:none}
 .im-audio-status .mj-podcast:has(audio):not(:has([role="status"])){display:none}
-/* The sensory evidence card sits above the sense buttons and the floating
-   journal toolbar, and never grows past the top bar on short screens. */
-.im-renderer .sense-card{bottom:144px;max-height:calc(100% - 220px);overflow:auto}
-@media(max-width:650px){.im-renderer .sense-card{bottom:auto;top:72px}}

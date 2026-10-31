@@ -1,7 +1,7 @@
 # MemoVerse Scene Contract
 
 Owner: 3D / 2.5D render (person 3)
-Consumers: backend (produces this JSON), frontend (fetches + passes it down), sensory (listens to interaction events).
+Consumers: backend (produces this JSON), frontend (fetches + passes it down), interaction handlers (listen to events).
 
 The AI-generated image is the painted room. The renderer mounts it as the back wall, adds a real 3D floor at the painted floor line, and stands the interactable props on that floor. The result is a grounded diorama: the image supplies the detail, the 3D layer supplies depth, contact shadows, and perspective.
 
@@ -162,7 +162,7 @@ Anything unknown renders a neutral placeholder box and is still clickable — it
 
 ## Events
 
-`onSelect(object, event)` fires on click/tap. `onHover(object)` fires on enter, `onHover(null)` on leave. Sensory can use these to trigger sound; frontend can open the memory modal with `memoryId`.
+`onSelect(object, event)` fires on click/tap. `onHover(object)` fires on enter, `onHover(null)` on leave. The frontend can open the memory modal with `memoryId`.
 
 ## Testing without the backend
 

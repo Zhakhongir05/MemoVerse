@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 const MemoryWorld=lazy(()=>import('./MemoryWorld.jsx'));
 import './connectedWorld.css';
-const PhotoDepthScene=lazy(()=>import('../sensory/PhotoDepthScene.jsx'));
+const PhotoDepthScene=lazy(()=>import('../photoDepth/PhotoDepthScene.jsx'));
 const Diorama=lazy(()=>import('../diorama/Scene.jsx'));
 const WorldLabsViewer=lazy(()=>import('./WorldLabsViewer.jsx'));
 export default function ConnectedWorld({scene,mood='Nostalgic',worldMode='symbolic',generatedWorld,onMoodChange,imageUrl,memory=null,enhancementOwner}){
