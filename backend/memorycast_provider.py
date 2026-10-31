@@ -38,7 +38,7 @@ class TourProvider:
         model=os.getenv('MEMORYCAST_SCRIPT_MODEL','gpt-4.1') if use_openai else self.pipeline.settings.deepseek_model
         result=await client.chat.completions.create(model=model,
           messages=[{'role':'system','content':prompt},{'role':'user','content':json.dumps(context,ensure_ascii=False)}],
-          response_format={'type':'json_object'},max_tokens=3600,timeout=12)
+          response_format={'type':'json_object'},max_tokens=3600,timeout=16)
         plan=parse_completion(result,TourPlan)
         # A separate evidence edit is part of generation, never an automatic retry.
         edit_prompt=("Edit this personal memory script against the supplied sources. Return the same JSON schema, corrected. "
@@ -52,7 +52,7 @@ class TourProvider:
           "Return only JSON matching "+json.dumps(TourPlan.model_json_schema()))
         reviewed=await client.chat.completions.create(model=model,
           messages=[{'role':'system','content':edit_prompt},{'role':'user','content':json.dumps({'sources':context['sources'],'language':context['language'],'visualization':context.get('visualization'),'draft':plan.model_dump()},ensure_ascii=False)}],
-          response_format={'type':'json_object'},max_tokens=3600,timeout=12)
+          response_format={'type':'json_object'},max_tokens=3600,timeout=16)
         plan=parse_completion(reviewed,TourPlan)
         chapters=[]
         for chapter in plan.chapters:

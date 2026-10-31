@@ -40,7 +40,7 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
   async function enter(mode) {
     try {
       await onGenerated({ world: { ...job.world, source: 'worldlabs', memoryId: memory.id, photoIndex }, tour: job.guided_tour })
-      void preparePodcast(memory.id).catch(() => {})
+      await preparePodcast(memory.id).catch(() => null)
       onExplore(mode)
     } catch (error) { entered.current=false; setError(error.message || 'Could not open this saved world.') }
   }

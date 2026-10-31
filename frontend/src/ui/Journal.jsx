@@ -11,6 +11,7 @@ import JournalHome from './JournalHome.jsx'
 import RelivePreparation from './RelivePreparation'
 import PhotoPlanInfo from './PhotoPlanInfo'
 import WorldAllowance from '../integration/WorldAllowance.jsx'
+import {preparePodcast} from '../integration/preparePodcast.js'
 import {existingWorld} from '../integration/existingWorld.js'
 
 function useMediaUrl(file) {
@@ -67,8 +68,19 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const photoInput = useRef(null)
   const alive = useRef(false)
   const saveLock = useRef(false)
+  const warmedPodcasts=useRef(new Set())
   const resumeWorld = useRef(savedWorldId())
 
+  useEffect(()=>{
+    if(!hasAccount || syncing || loading)return
+    for(const entry of entries){
+      const key=owner+':'+entry.id
+      if(entry.syncState!=='synced'||!entry.photos.length||warmedPodcasts.current.has(key))continue
+      warmedPodcasts.current.add(key)
+      // Backfill existing reservations/worlds, never narrate every saved draft.
+      void preparePodcast(entry.id,undefined,{existingOnly:!entry.world}).catch(()=>{})
+    }
+  },[entries,owner,hasAccount,syncing,loading])
   useEffect(()=>{
     if(!resumeWorld.current||!hasAccount||loading||syncing||loadedOwner.current!==owner)return
     const entry=entries.find(item=>item.id===resumeWorld.current)

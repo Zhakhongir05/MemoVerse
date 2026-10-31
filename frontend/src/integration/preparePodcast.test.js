@@ -33,3 +33,18 @@ test('a failed read never becomes a creation request',async()=>{
   await assert.rejects(preparePodcast('read-error',async()=>{calls++;throw Error('Storage unavailable')}),/Storage unavailable/)
   assert.equal(calls,1)
 })
+
+test('failed reservation is recovered once without requesting regeneration',async()=>{
+ let writes=0, advances=0
+ const result=await preparePodcast('failed-reservation',async(path,options={})=>{
+  if(options.method==='POST'&&path.startsWith('/memories/')){writes++;assert.equal(options.body.regenerate,false);return {tour:{id:'same-reservation',status:'pending'}}}
+  if(options.method==='POST'){advances++;return {tour:{id:'same-reservation',status:'ready'},advanced:true}}
+  return {generation_enabled:true,tour:{id:'same-reservation',status:advances?'ready':'failed'}}
+ })
+ assert.equal(writes,1);assert.equal(advances,1);assert.equal(result.tour.id,'same-reservation')
+})
+test('drafts without a world or reservation are never narrated by backfill',async()=>{
+ let writes=0
+ await preparePodcast('draft',async(_path,options={})=>{if(options.method==='POST')writes++;return {generation_enabled:true,tour:null}}, {existingOnly:true})
+ assert.equal(writes,0)
+})
