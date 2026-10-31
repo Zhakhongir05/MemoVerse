@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "node --test src/integration/*.test.js src/ui/*.test.js src/enhancements/*.test.js",
     "test:browser": "playwright test",
-    "test:database": "node --test ../backend/tests/world_allowance.test.mjs ../backend/tests/journal_worlds.test.mjs ../backend/tests/memorycast_database.test.mjs"
+    "test:database": "node --test ../backend/tests/world_allowance.test.mjs ../backend/tests/journal_worlds.test.mjs ../backend/tests/memorycast_database.test.mjs ../backend/tests/journal_world_jobs.test.mjs ../backend/tests/rejected_world_slots.test.mjs ../backend/tests/review_hold_restoration.test.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

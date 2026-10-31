@@ -77,3 +77,16 @@ jobs:
         run: npm --prefix frontend run lint
       - name: Frontend production build
         run: npm --prefix frontend run build
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - name: Install mocked browser backend
+        run: python -m pip install -r backend/requirements-dev.txt
+      - name: Install browser for world regression tests
+        run: npm exec --prefix frontend -- playwright install --with-deps chromium
+      - name: World generation, persistence and refresh browser tests
+        env:
+          MEMOVERSE_TEST_PRODUCTION: '1'
+          MEMOVERSE_TEST_PYTHON: python
+          MEMOVERSE_BROWSER_CHANNEL: chromium
+        run: npm --prefix frontend run test:browser -- world-hotfix.spec.js
