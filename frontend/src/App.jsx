@@ -1,12 +1,18 @@
+import Dashboard from './ui/Dashboard'
 import Scene from './3d_world/Scene'
-import './App.css'
+import AuthGate from './ui/AuthGate'
 
-function App() {
+export default function App() {
   return (
-    <div className="App">
-      <Scene />
-    </div>
+    <AuthGate>
+      {({ user, signOut }) => (
+        <Dashboard
+          key={user?.id || 'demo'}
+          user={user}
+          onSignOut={signOut}
+          SceneRenderer={Scene}
+        />
+      )}
+    </AuthGate>
   )
 }
-
-export default App
