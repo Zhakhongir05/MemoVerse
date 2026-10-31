@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock,patch
 from uuid import uuid4
 import httpx
 from fastapi import HTTPException
+from openai import APITimeoutError
 from fastapi.testclient import TestClient
 from backend.main import app
 from backend.world_accounts import get_accounts
@@ -121,11 +122,51 @@ class Providers(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn('Take a breath',result['chapters'][0]['narration'])
             outputs.append(result)
         self.assertNotEqual(outputs[0]['chapters'][0]['narration'],outputs[1]['chapters'][0]['narration'])
-    async def test_photo_evidence_is_required_when_a_photo_was_analyzed(self):
+    async def test_photo_memory_without_photo_evidence_falls_back_to_verbatim_reading(self):
         ctx=context_for(memory(),A,'en');ctx['sources']['photo:1']='A red chair.'
         create=AsyncMock(return_value=completion(draft(ctx,include_photo=False).model_dump()))
         pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
-        with self.assertRaises(ValueError):await TourProvider(pipeline).script(ctx)
+        result=await TourProvider(pipeline).script(ctx)
+        # The rejected model tour is replaced by the saved words, never invented prose.
+        self.assertEqual(len(result['chapters']),3)
+        self.assertEqual(result['chapters'][0]['evidence'][0]['source_id'],'journal:story')
+        for chapter in result['chapters']:
+            for evidence in chapter['evidence']:
+                self.assertIn(evidence['quote'],ctx['sources'][evidence['source_id']])
+        for chapter in result['chapters'][:2]:
+            self.assertIn('photo:1',[evidence['source_id'] for evidence in chapter['evidence']])
+    async def test_failed_edit_pass_keeps_the_grounded_draft(self):
+        ctx=context_for(memory(),A,'en');value=draft(ctx).model_dump()
+        create=AsyncMock(side_effect=[completion(value),completion('not a tour')])
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(create.await_count,2)
+        self.assertEqual(result['chapters'][0]['narration'],value['chapters'][0]['narration'])
+    async def test_unusable_model_output_falls_back_to_the_saved_words(self):
+        ctx=context_for(memory(),A,'en')
+        create=AsyncMock(return_value=completion('not a tour'))
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(len(result['chapters']),3)
+        for chapter in result['chapters']:
+            self.assertTrue(chapter['narration'].strip())
+            for evidence in chapter['evidence']:
+                self.assertIn(evidence['quote'],ctx['sources'][evidence['source_id']])
+    async def test_tiny_story_still_produces_three_spoken_chapters(self):
+        ctx=context_for({**memory(),'story':'Rain.'},A,'en')
+        create=AsyncMock(return_value=completion('not a tour'))
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual([c['order'] for c in result['chapters']],[1,2,3])
+        for chapter in result['chapters']:self.assertGreaterEqual(len(chapter['narration']),40)
+    async def test_provider_timeout_falls_back_without_a_second_paid_call(self):
+        ctx=context_for(memory(),A,'en')
+        timeout=APITimeoutError(request=httpx.Request('POST','https://example.invalid'))
+        create=AsyncMock(side_effect=timeout)
+        pipeline=SimpleNamespace(deepseek=SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),openai=object(),settings=SimpleNamespace(deepseek_model='existing-lablup-model'))
+        result=await TourProvider(pipeline).script(ctx)
+        self.assertEqual(create.await_count,1)
+        self.assertEqual(len(result['chapters']),3)
     async def test_saved_photo_vision_reuses_existing_openai_client(self):
         value={'objects':[{'description':'A red synthetic image','location':'center'}],'spatial_layout':'A flat test image','lighting':'Even light','colors':['red'],'uncertainty':'Synthetic test image only'}
         create=AsyncMock(return_value=completion(value))

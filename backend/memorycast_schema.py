@@ -104,6 +104,54 @@ def copied_excerpt(quote,source):
         return ' '.join(value.casefold().split())
     return bool(quote.strip()) and canonical(quote) in canonical(source)
 
+FALLBACK_LINES={'en':['This is part of the memory you kept, and it is still yours.',
+                       'The moment is still here with you, whenever you return to it.',
+                       'It stays yours to come back to, in your own words and your own time.'],
+                'ko':['이것은 당신이 간직한 기억의 일부이며, 여전히 당신의 것입니다.',
+                      '그 순간은 다시 돌아올 때마다 여전히 당신 곁에 있습니다.',
+                      '당신의 말과 당신의 시간 속에, 언제든 다시 돌아올 수 있습니다.']}
+
+def _sentences(text):
+    parts=[part.strip() for part in re.split(r'(?<=[.!?…])\s+|\n+',text.strip()) if part.strip()]
+    return parts or [text.strip()]
+
+def verbatim_tour(context):
+    """Cost-free narration from the saved words themselves.
+
+    Used only when the model-written tour cannot be grounded. Chapters are cut
+    at sentence boundaries, so a fallback reads complete thoughts from the
+    listener's own memory instead of inventing a story or tearing a phrase in
+    half. Chapters with no remaining source text are quiet, generic reflections.
+    """
+    sources=context['sources']
+    story=sources.get('journal:story','').strip()
+    photo_key=next((key for key in sorted(sources) if key.startswith('photo:') and sources[key].strip()),None)
+    photo=sources[photo_key].strip() if photo_key else ''
+    source_key='journal:story' if story else photo_key
+    if not (story or photo):raise ValueError('No narration sources')
+    lines=FALLBACK_LINES[context['language']]
+    units=_sentences((story or photo)[:7000])
+    if len(units)>=3:
+        size=len(units)/3
+        parts=[' '.join(units[round(i*size):round((i+1)*size)]).strip() for i in range(3)]
+    elif len(units)==2:parts=[units[0],units[1],lines[2]]
+    else:parts=[units[0],lines[1],lines[2]]
+    parts=[part for part in parts if part] or [units[0]]
+    while len(parts)<3:parts.append(lines[len(parts)%len(lines)])
+    chapters=[]
+    for index,part in enumerate(parts[:3]):
+        narration=part.strip()
+        if len(narration)>2400:narration=narration[:2400].rsplit(' ',1)[0]
+        # Keep spoken text long enough for the audio contract without cutting words.
+        if len(narration)<40:narration=(narration+' '+lines[index%len(lines)]).strip()
+        evidence=[Excerpt(source_id=source_key,quote=units[0][:1200])]
+        if story and photo and index<2:evidence.append(Excerpt(source_id=photo_key,quote=photo[:1200]))
+        if evidence[0].quote not in (story or photo):raise ValueError('Ungrounded fallback excerpt')
+        chapters.append(DraftChapter(order=index+1,narration=narration,anchor_id=None,excerpts=evidence,ambience='quiet'))
+    quote=units[0][:500] if story else ''
+    draft=TourDraft(journal_reading=JournalReading(interpretation='Your own words, kept as written.',evidence_quote=quote),chapters=chapters)
+    return render_tour(draft,context)
+
 def render_tour(draft,context):
     if [c.order for c in draft.chapters]!=[1,2,3]:raise ValueError('Invalid chapter order')
     story=context['sources'].get('journal:story','')

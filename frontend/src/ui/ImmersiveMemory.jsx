@@ -81,9 +81,9 @@ export default function ImmersiveMemory({ memory, SceneRenderer, WorldViewer, Jo
       <div className="im-topbar"><button className="im-back" disabled={saving} onClick={onExit} aria-label="Back to memory">← Back</button><div className="im-memory-name"><span>{formatMemoryDate(memory.date)}</span><h1>{memory.title}</h1></div>{symbolic || demo ? <span className="im-mode-label">Sample</span> : null}</div>
       {photoError && <p className="im-fullscreen-error" role="alert">{photoError}</p>}
       {fullscreenError && <p className="im-fullscreen-error" role="alert">{fullscreenError}</p>}
-      <div className="im-audio-status" hidden={!listening}><MemoryPodcast key={memory.id} compact autoPlay={listening} onPlaybackChange={setPodcastCue} memory={memory} user={user} /></div>
+      {!demo && <div className="im-audio-status" hidden={!listening}><MemoryPodcast key={memory.id} compact autoPlay={listening} onPlaybackChange={setPodcastCue} memory={memory} user={user} /></div>}
       <div className="im-toolbar" role="toolbar" aria-label="Memory world controls">
-        <Tool label="Listen" icon="headphones" active={listening} onClick={() => setListening(value => !value)} />
+        {!demo && <Tool label="Listen" icon="headphones" active={listening} onClick={() => setListening(value => !value)} />}
         <Tool label={favorite ? 'Favorited' : 'Favorite'} icon="heart" active={favorite} onClick={onFavorite} disabled={favoriteBusy || demo} />
         <Tool label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} icon="expand" active={fullscreen} onClick={toggleFullscreen} />
         <Tool label="More" icon="more" active={!!panel} onClick={event => openPanel('options', event)} disabled={saving} />
