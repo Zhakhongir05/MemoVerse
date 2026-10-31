@@ -6,6 +6,9 @@ import './Journal.css'
 import MemoryTimeline from './MemoryTimeline'
 import ImmersiveMemory from './ImmersiveMemory'
 import RelivePreparation from './RelivePreparation'
+import GenerationPlans from './GenerationPlans'
+import PhotoPlanInfo from './PhotoPlanInfo'
+import { requestCreditGeneration } from './generationCredits'
 
 function useMediaUrl(file) {
   const [value, setValue] = useState({ file: null, url: '' })
@@ -29,7 +32,7 @@ const emptyDraft = () => ({ title: '', date: localDate(), story: '', mood: 'Nost
  * JourneyController can synchronize AI narration/camera poses with activeStep.
  * The built-in guided reading never pretends to drive the 3D camera or AI audio.
  */
-export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment }) {
+export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment = requestCreditGeneration, onPurchase }) {
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
   const [view, setView] = useState('journal')
@@ -140,6 +143,8 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   function choosePhotos(files, replaceIndex = null) {
     const incoming = Array.from(files || [])
     if (!incoming.length) return
+    if (incoming.length !== 1) { setInputError('Choose one photo at a time for your memory.'); return }
+    if (replaceIndex === null && draft.photos.length) { setInputError('Replace the current source photo before adding another.'); return }
     const photos = replaceIndex === null ? [...draft.photos, ...incoming] : draft.photos.map((file, index) => index === replaceIndex ? incoming[0] : file)
     const validation = validateEntry({ ...draft, photos })
     if (validation.photos) { setInputError(validation.photos); return }
@@ -200,7 +205,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
           <label htmlFor="mj-story">The story behind it</label><textarea id="mj-story" rows={9} maxLength={12000} value={draft.story} onChange={event => change('story', event.target.value)} placeholder="I still remember the light through the window…" aria-invalid={!!fieldErrors.story} aria-describedby="mj-story-error mj-story-help" /><div id="mj-story-help" className="mj-form-hint">Start with what you can still feel. <span>{draft.story.length}/12000</span></div><p id="mj-story-error" className="mj-field-error" role="alert">{fieldErrors.story}</p>
           <fieldset className="mj-moods" id="mj-mood"><legend>How does it feel?</legend>{MOODS.map(mood => <label key={mood} className={draft.mood === mood ? 'mj-chosen' : ''}><input type="radio" name="journal-mood" checked={draft.mood === mood} onChange={() => change('mood', mood)} /><span>{mood}</span></label>)}</fieldset>
         </div>
-        <div className="mj-editor-side"><div className="mj-glass mj-photo-panel"><h2>Bring it into focus</h2><p>Select several pictures together, or add more one at a time. Up to 6 photos · 10 MB each.</p><button className="mj-add-photos" type="button" disabled={draft.photos.length >= 6} onClick={() => photoInput.current?.click()}>＋ Add photos ({draft.photos.length}/6)</button><input id="mj-photos" ref={photoInput} type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={event => { choosePhotos(event.target.files); event.target.value = '' }} aria-label="Add photographs" aria-describedby="mj-photo-error" />
+        <div className="mj-editor-side"><div className="mj-glass mj-photo-panel"><h2>Bring it into focus</h2><p>Choose one JPG, PNG, or WebP photo · Up to 10 MB.</p><PhotoPlanInfo user={user} /><button className="mj-add-photos" type="button" onClick={() => photoInput.current?.click()}>{draft.photos.length ? 'Replace source photo' : '＋ Add source photo'}</button><input id="mj-photos" ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => { choosePhotos(event.target.files, draft.photos.length ? 0 : null); event.target.value = '' }} aria-label="Choose one source photograph" aria-describedby="mj-photo-error" />
           <div className="mj-photo-edit-grid">{draft.photos.map((file, index) => <div key={`${index}-${file.name}`}><Photo file={file} alt={`Memory photograph ${index + 1}`} /><div><label className="mj-file-replace">Replace<input type="file" accept="image/jpeg,image/png,image/webp" aria-label={`Replace photograph ${index + 1}`} onChange={event => { choosePhotos(event.target.files, index); event.target.value = '' }} /></label><button type="button" aria-label={`Remove photograph ${index + 1}`} onClick={() => { setInputError(''); change('photos', draft.photos.filter((_, photoIndex) => index !== photoIndex)) }}>Remove</button></div></div>)}</div>
           <p id="mj-photo-error" className="mj-field-error" role="alert">{inputError || fieldErrors.photos}</p></div>
           <div className="mj-save-area"><button className="mj-primary" type="submit">{saving ? 'Saving your memory…' : 'Save journal entry ↗'}</button><p>Keep this moment. Come back whenever you like.</p></div>
@@ -221,7 +226,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
   return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''}`}>
     <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◈</span> MemoVerse<span>.</span></button>
-      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button></nav>
+      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>3D Creation</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>
       <div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
         if (!canLeave()) return
         setAccountBusy(true)
@@ -232,6 +237,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     {notice && <p className="mj-notice" role="status">{notice}</p>}
     {user && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
 
+    {view === 'plans' && <GenerationPlans user={user} onSignIn={onSignIn} onPurchase={onPurchase} />}
     {view === 'timeline' && <MemoryTimeline owner={owner} entries={entries} loading={loading} onOpen={openMemory} onNew={createMemory} Photo={Photo} SceneRenderer={SceneRenderer} />}
 
     {view === 'creations' && <section className="mj-collection">
@@ -262,7 +268,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
           <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>A world from your photograph. A story that brings you back.</p><button className="mj-primary" onClick={() => { setDemo(false); setView('prepare') }}>Relive My Memory ✧</button></div>
         </div></div></section>}
 
-    {view === 'prepare' && selected && <RelivePreparation memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
+    {view === 'prepare' && selected && <RelivePreparation user={user} Photo={Photo} onPlans={() => setView('plans')} memory={selected} generateEnvironment={generateEnvironment} hasWorldViewer={!!WorldViewer} onBack={() => setView('detail')} onEdit={() => { setDraft({ ...selected }); setDirty(false); setView('create') }} onExplore={relive} onGenerated={async result => {
       let saved = await saveEntry(owner, { ...selected, world: { ...result.world, ...(result.tour ? { guidedTour: result.tour } : {}), ...(typeof result.story === 'string' ? { preparedStory: result.story } : {}) }, story: selected.story, scene: result.scene || selected.scene, syncState: user ? 'pending' : 'local' })
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }
