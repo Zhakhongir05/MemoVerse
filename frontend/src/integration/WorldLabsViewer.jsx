@@ -93,10 +93,11 @@ function settleInsideRoom(mesh,list){
   return enhancement;
  });
 }
-export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null }){
+export default function WorldLabsViewer({ world = existingWorld, enhancementResponse = null, mood: externalMood, onMoodChange, embedded = false, imageUrl = '', scene = null, memory: savedMemory = null, enhancementOwner, savedAnchors = [], onSaveExperience, podcastCue = null, mode = 'explore' }){
  // Only the saved sample room ships a predefined furniture demo. Journal worlds use
  // their saved manifest when one exists, otherwise they propose furniture once from
  // the bound photograph and cache the result on this device.
+ const showTools = !embedded || mode === 'edit';
  const persistentExperience=typeof onSaveExperience==='function';
  const response = enhancementResponse ?? (!persistentExperience && world.id === existingWorld.id ? DEMO_ENHANCEMENT_RESPONSE : null);
  const [{list:enhancements,error:enhancementError},setEnhancementState]=useState({list:[],baseline:[],error:''});
@@ -242,7 +243,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   for(const kind of ['photo','audio'])if(selectedAnchor?.[kind]){URL.revokeObjectURL(selectedAnchor[kind]);urls.current.delete(selectedAnchor[kind]);}
   setAnchors(a=>a.filter(x=>x.id!==selected));setSelected(null);setPlacing(false);
  }
- return <Boundary><div data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} className={`world-host immersive-world ${mood} ${embedded?'mv-clean-viewer':''}`}>
+ return <Boundary><div data-world-state={status.startsWith('Loaded') ? 'ready' : 'loading'} data-world-id={world.id} data-world-source={world.id===existingWorld.id?'sample':'generated'} className={`world-host immersive-world ${mood} ${embedded && mode !== 'edit'?'mv-clean-viewer':''}`}>
   <Canvas camera={{position:[.25,.1,.45],fov:70,near:.01,far:500}} dpr={[1,1.5]} gl={{antialias:false,powerPreference:'high-performance'}}>
    <color attach="background" args={['#17171b']}/>
    <Assets world={world} quality={quality} wireframe={wireframe} placing={placing} onPlace={place} onStatus={setStatus} onCollider={setColliderMesh}/>
@@ -254,13 +255,13 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   </Canvas>
   {embedded&&!status.startsWith('Loaded')&&<p role={status.includes('failed')?'alert':'status'} style={{position:'absolute',bottom:'1rem',left:'1rem',zIndex:3,background:'#17171bcc',padding:'.6rem 1rem',borderRadius:'.5rem'}}>{status}</p>}
   <div className="atmosphere-wash" aria-hidden="true"/>
-  <div className="sense-controls" aria-label="SenseShift atmosphere">
+  {showTools && <div className="sense-controls" aria-label="SenseShift atmosphere">
    {['nostalgic','joyful','melancholic'].map(value=><button key={value} aria-pressed={mood===value} onClick={()=>onMoodChange?onMoodChange(value):setMoodSetting(value)}>{value}</button>)}
    <button aria-pressed={quality==='full'} onClick={()=>setQuality(q=>q==='full'?'balanced':'full')}>{quality==='full'?'Full detail · switch to smooth':'Smooth · load full detail'}</button>
    <button onClick={()=>setJourney(n=>n+1)}>Return to memory</button>
    <button aria-pressed={ambience} onClick={toggleAmbience}>{ambience?'Mute ambience':'Play gentle ambience'}</button>
-  </div>
-  {<section className="enhancement-panel" aria-label="Enhanced objects">
+  </div>}
+  {showTools && <section className="enhancement-panel" aria-label="Enhanced objects">
    <header><div><p className="enhancement-eyebrow">HIGH-DETAIL OVERLAY</p><h2>Enhanced objects</h2></div>
     <button aria-pressed={calibrating} onClick={()=>setCalibrating(value=>!value)}>{calibrating?'Done':'Calibrate'}</button></header>
    <p role="status">{enhancementStatus}</p>
@@ -283,7 +284,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
     <button onClick={()=>setSelectedEnhancement(null)}>Close</button>
    </article>:<p className="enhancement-hint">Click an object in the room to read its story.</p>}
   </section>}
-  <details className="world-tools" open><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
+  {showTools && <details className="world-tools" open><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
    <label>New memory<textarea value={memory} maxLength={2000} rows={2} placeholder="Write a real memory, then place it in the room…" onChange={e=>setMemory(e.target.value)}/></label>
    <button disabled={!memory.trim()&&!placing} onClick={()=>setPlacing(placing?false:'new')}>{placing?'Cancel placement':'Place memory'}</button>
    {placing&&<p>Double-click a surface to {placing==='move'?'move this memory':'place your memory'}.</p>}
@@ -297,6 +298,6 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
    {audioError&&<p role="alert">{audioError}</p>}
    <label><input type="checkbox" checked={wireframe} onChange={e=>setWireframe(e.target.checked)}/> Show collider alignment</label>
    <p className="local-note">Save placements and anchor stories with the account save button. New photo/audio anchor attachments stay in this tab. Saved worlds reopen without AI generation.</p>
-  </details>
+  </details>}
  </div></Boundary>;
 }

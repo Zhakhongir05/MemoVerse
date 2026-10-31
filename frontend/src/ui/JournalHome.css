@@ -16,3 +16,9 @@
 @media(max-width:420px){.jh-tools{width:100%;justify-content:flex-start}.jh-current{flex-basis:100%}.jh-stage-bottom{flex-direction:column;align-items:flex-start}}
 
 @media(max-width:720px){.mj-journal-home .mj-header{height:auto;min-height:74px;flex-wrap:wrap;padding-top:10px;padding-bottom:10px;row-gap:10px}.mj-journal-home .mj-header nav{order:3;flex-basis:100%;justify-content:center;gap:4px}.mj-journal-home .mj-header nav button{font-size:11px;padding:7px 10px}.mj-journal-home .mj-account{margin-left:auto}}
+
+.jh-heart[aria-pressed=true] svg,.im-tool[aria-pressed=true] svg:has(path[d^="M20.8"]){fill:#e6a89b;color:#ffd4bf}
+.mj-app :focus-visible{outline:2px solid #f8dfb2;outline-offset:4px}
+.jh-round,.im-tool,.im-close,.mc-close{min-width:44px;min-height:44px}
+.mj-podcast audio{width:100%;max-width:340px}.mj-podcast h2{font-size:24px}.mj-podcast-skip{display:flex;gap:12px;margin-top:10px}.mj-podcast-chapter{font-size:12px;margin:0 0 8px}
+.jh-panel .mj-podcast{padding:0;border:0;background:transparent}

@@ -11,7 +11,9 @@ import SpeechInput from './SpeechInput.jsx'
 import JournalHome from './JournalHome.jsx'
 import RelivePreparation from './RelivePreparation'
 import PhotoPlanInfo from './PhotoPlanInfo'
-import WorldAllowance from '../integration/WorldAllowance.jsx'
+import GenerationPlans from './GenerationPlans.jsx'
+import { cachedFavorites, setFavorite, syncFavorites } from './favorites.js'
+import { watchPodcastPreparation } from '../integration/preparePodcast.js'
 import {existingWorld} from '../integration/existingWorld.js'
 
 function useMediaUrl(file) {
@@ -36,9 +38,11 @@ const emptyDraft = () => ({ title: '', date: localDate(), story: '', mood: 'Nost
  * JourneyController can synchronize AI narration/camera poses with activeStep.
  * The built-in guided reading never pretends to drive the 3D camera or AI audio.
  */
-export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment, onPurchase }) {
+export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment }) {
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
+  const [favorites, setFavorites] = useState(() => cachedFavorites(owner).values)
+  const [favoriteBusy, setFavoriteBusy] = useState(false)
   const [view, setView] = useState('journal')
   const [generationRequest,setGenerationRequest]=useState(null)
   const [entries, setEntries] = useState([])
@@ -70,6 +74,20 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const saveLock = useRef(false)
   const resumeWorld = useRef(savedWorldId())
 
+  useEffect(() => {
+    let active = true
+    setFavorites(cachedFavorites(owner).values)
+    syncFavorites(owner).then(values => { if (active) setFavorites(values) }).catch(() => {})
+    return () => { active = false }
+  }, [owner, refresh])
+  async function toggleFavorite(memory) {
+    if (favoriteBusy) return
+    const next = !favorites[memory.id]
+    setFavoriteBusy(true); setFavorites(values => ({ ...values, [memory.id]: next }))
+    try { setFavorites(await setFavorite(owner, memory.id, next)) }
+    catch (error) { setNotice(error.message) }
+    finally { setFavoriteBusy(false) }
+  }
   useEffect(()=>{
     if(!resumeWorld.current||!hasAccount||loading||syncing||loadedOwner.current!==owner)return
     const entry=entries.find(item=>item.id===resumeWorld.current)
@@ -133,6 +151,10 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     return () => window.removeEventListener('beforeunload', warn)
   }, [dirty, saving])
 
+  useEffect(() => {
+    if (user?.id && selected?.world?.source === 'worldlabs') return watchPodcastPreparation(user.id, selected.id)
+  }, [user?.id, selected?.id, selected?.world?.source])
+
   const steps = useMemo(() => selected ? journeySteps(selected) : [], [selected])
 
   function canLeave() {
@@ -191,7 +213,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       }
       if (!alive.current) return
       setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)].sort((a, b) => b.date.localeCompare(a.date) || b.updatedAt.localeCompare(a.updatedAt)))
-      setSelected(saved); setActivePhoto(0); setDirty(false); if (view === 'relive') setEditorSavedToken(value => value + 1); else setView('detail'); setNotice(saved.syncState === 'synced' ? 'Your memory has been saved.' : user ? 'Saved on this device. Cloud sync is pending; use Retry sync.' : 'Saved on this device. Sign in to sync to Supabase.')
+      setSelected(saved); setActivePhoto(0); setDirty(false); if (view === 'relive') setEditorSavedToken(value => value + 1); else setView('detail'); setNotice(saved.syncState === 'synced' ? 'Your memory has been saved.' : user ? 'Saved on this device. Cloud sync is pending; use Retry sync.' : 'Saved on this device. Sign in to keep it across devices.')
     } catch (err) {
       if (alive.current) setError(err.name === 'QuotaExceededError' ? 'Your browser storage is full. Use smaller photos, then save again. Your draft is still here.' : err.message || 'Could not save. Your draft is still here; please try again.')
     } finally { saveLock.current = false; if (alive.current) setSaving(false) }
@@ -241,9 +263,9 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
   if (view === 'studio' && LegacyStudio) return <><div className="mj-legacy-bar"><button onClick={() => setView(selected ? 'detail' : 'journal')}>← Back to journal memory</button><span>Original studio · Its older cloud saves remain separate from journal entries.</span></div><LegacyStudio user={user} onSignIn={onSignIn} onSignOut={onSignOut} checkingAuth={checkingAuth} initialScreen="upload" SceneRenderer={SceneRenderer} /></>
 
-  return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''} ${view === 'journal' ? 'mj-journal-home' : ''}`}>
+  return <main className={`mj-app ${view === 'relive' ? 'mj-immersive' : ''} ${['journal', 'favorites'].includes(view) ? 'mj-journal-home' : ''}`}>
     <header className="mj-header"><button className="mj-logo" onClick={() => navigate('journal')} aria-label="MemoVerse journal home"><span>◈</span> MemoVerse<span>.</span></button>
-      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>Saved Worlds</button></nav>
+      <nav aria-label="Journal navigation"><button aria-current={view === 'journal' ? 'page' : undefined} onClick={() => navigate('journal')}>My Journal</button><button aria-current={view === 'timeline' ? 'page' : undefined} onClick={() => navigate('timeline')}>Timeline</button><button aria-current={view === 'creations' ? 'page' : undefined} onClick={() => navigate('creations')}>Saved Worlds</button><button aria-current={view === 'favorites' ? 'page' : undefined} onClick={() => navigate('favorites')}>Favorites</button><button aria-current={view === 'plans' ? 'page' : undefined} onClick={() => navigate('plans')}>Plans</button></nav>
       <div className="mj-account">{user ? <><span>{user.email}</span><button disabled={accountBusy || saving || syncing} onClick={async () => {
         if (!canLeave()) return
         setAccountBusy(true)
@@ -254,7 +276,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     {notice && <p className="mj-notice" role="status">{notice}</p>}
     {user && <div className="mj-sync-banner" role="status">{syncing ? 'Syncing your private journal…' : syncError ? 'Cloud sync needs attention.' : entries.some(entry => entry.syncState !== 'synced') ? 'Some entries are waiting to sync.' : 'Your journal is synced to your account.'}{syncError && <><p role="alert">{syncError}</p><button disabled={syncing || saving} onClick={() => setRefresh(value => value + 1)}>Retry sync</button></>}</div>}
 
-    {['journal','timeline','creations'].includes(view) && <WorldAllowance user={user} />}
+    {view === 'plans' && <GenerationPlans user={user} onSignIn={onSignIn} />}
     {view === 'timeline' && <MemoryTimeline owner={owner} entries={entries} loading={loading} onOpen={openMemory} onNew={createMemory} Photo={Photo} SceneRenderer={SceneRenderer} />}
 
     {view === 'creations' && <section className="mj-collection">
@@ -262,7 +284,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       {loading ? <p className="mj-loading" role="status">Opening your creations…</p> : entries.some(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && !['mock','sample'].includes(entry.world.source)) ? <div className="mj-card-grid">{entries.filter(entry => entry.world && typeof entry.world === 'object' && Object.keys(entry.world).length && !['mock','sample'].includes(entry.world.source)).map(entry => <MemoryCard key={entry.id} entry={entry} onOpen={memory => { if (!canLeave()) return; setSelected(memory); setActivePhoto(0); setDemo(false); setDirty(false); setView('prepare') }} />)}</div> : <div className="mj-empty"><div className="mj-empty-portal" aria-hidden="true">✧</div><h2>Your first world is waiting.</h2><p>Open a journal entry and select Relive My Memory.<br />Generated worlds will be saved here automatically.</p><button className="mj-primary" onClick={() => navigate('journal')}>Go to My Journal ↗</button></div>}
     </section>}
 
-    {view === 'journal' && <JournalHome headingRef={heading} entries={entries} loading={loading} Photo={Photo} onOpen={openMemory} onNew={createMemory}
+    {['journal', 'favorites'].includes(view) && <JournalHome onBrowse={() => navigate('journal')} key={view} favoritesOnly={view === 'favorites'} user={user} favorites={favorites} onFavorite={toggleFavorite} favoriteBusy={favoriteBusy} headingRef={heading} entries={view === 'favorites' ? entries.filter(entry => favorites[entry.id]) : entries} loading={loading} Photo={Photo} onOpen={openMemory} onNew={createMemory}
       onExplore={(memory) => {
         if (!canLeave()) return
         if (!user) { onSignIn?.(); return }
@@ -284,7 +306,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
 
     {view === 'detail' && selected && <section className="mj-detail"><button className="mj-back-to-journal" onClick={() => navigate('journal')}>← Back to My Journal</button><div className="mj-detail-layout"><article><p className="mj-eyebrow">{formatMemoryDate(selected.date)} <span className={`mj-mood mj-${selected.mood.toLowerCase()}`}>{selected.mood}</span></p><h1 ref={heading} tabIndex={-1}>{selected.title}</h1><p className="mj-detail-story">{selected.story || 'Some moments live in photographs. This one is yours to remember.'}</p><MemoryPodcast key={selected.id} memory={selected} user={user} /><button className="mj-back" onClick={() => { setDraft({ ...selected }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create') }}>Edit this memory ↗</button><button className="mj-delete-memory" disabled={saving || syncing} onClick={deleteMemory}>{saving ? 'Deleting…' : 'Delete memory'}</button></article>
         <div className="mj-detail-media">{selected.photos.length ? <><Photo file={selected.photos[activePhoto]} alt={`${selected.title}, photograph ${activePhoto + 1}`} className="mj-detail-cover" /><div className="mj-thumbnails">{selected.photos.map((photo, index) => <button key={index} aria-label={`View photograph ${index + 1}`} aria-pressed={activePhoto === index} onClick={() => setActivePhoto(index)}><Photo file={photo} alt="" /></button>)}</div></> : <div className="mj-detail-no-photo" aria-hidden="true">◈<span>A moment held in words</span></div>}
-          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a realistic World Labs world from this photograph. Selecting Relive sends it to World Labs and uses one free generation.'}</p><button className="mj-primary" onClick={() => {
+          <div className="mj-relive-card mj-glass"><p className="mj-eyebrow">DON’T JUST REMEMBER IT</p><h2>Return to the feeling.</h2><p>{selected.world ? 'Reopen your saved world without using another generation.' : 'Create a 3D memory and saved AI podcast from your photograph and story. Uses one generation.'}</p><button className="mj-primary" onClick={() => {
             setDemo(false)
             // Always resolve the authoritative journal binding and fresh private assets first.
             if(!user){onSignIn?.();return}
@@ -297,7 +319,7 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
       if (user) { try { const synced = await syncJournal(owner); saved = synced.entries.find(entry => entry.id === saved.id) || saved; setSyncError(synced.failures.join(' · ')) } catch (err) { setSyncError(err.message) } }
       if (alive.current) { setSelected(saved); setEntries(rows => [saved, ...rows.filter(entry => entry.id !== saved.id)]) }
     }} />}
-    {view === 'relive' && selected && <ImmersiveMemory symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) {clearWorldLocation();setView(demo ? 'journal' : 'detail')} }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
+    {view === 'relive' && selected && <ImmersiveMemory user={user} favorite={!!favorites[selected.id]} onFavorite={() => toggleFavorite(selected)} favoriteBusy={favoriteBusy} symbolic={symbolic} demo={demo} memory={selected} SceneRenderer={SceneRenderer} WorldViewer={WorldViewer} JourneyController={JourneyController} steps={steps} activeStep={activeStep} onStepChange={setActiveStep} initialMode={journeyMode} editor={renderMemoryForm()} onBeginEdit={beginReliveEdit} onCancelEdit={cancelReliveEdit} onExit={() => { if (cancelReliveEdit()) {clearWorldLocation();setView(demo ? 'journal' : 'detail')} }}  Photo={Photo} savedToken={editorSavedToken} error={error} syncError={syncError} saving={saving} />}
 
   </main>
 }

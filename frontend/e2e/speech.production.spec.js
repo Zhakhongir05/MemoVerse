@@ -59,8 +59,8 @@ test('production HTTPS: dictation preserves typing, review inserts once, and the
   await page.reload()
   await page.getByRole('button', { name: 'Explore Memories', exact: true }).click()
   await page.getByRole('button', { name: 'Continue exploring without signing in' }).click()
-  await page.getByRole('button', { name: 'Read current memory', exact: true }).click()
-  await expect(page.locator('.jh-full-story')).toHaveText('Typed beginning. The afternoon was golden.')
+  await page.getByRole('button', { name: 'Open current journal entry', exact: true }).click()
+  await expect(page.locator('.mj-detail-story')).toHaveText('Typed beginning. The afternoon was golden.')
 })
 
 test('production HTTPS: permission/network errors reset controls even without an end event', async ({ page }) => {

@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {spz,collider,png} from './fixtures.js';
 import {sessionFor,TEST_USERS} from '../../backend/tests/supabase_fixture.mjs';
-const stats=async request=>(await request.get('http://127.0.0.1:8026/__test/stats')).json();
+const stats=async request=>(await request.get(`http://127.0.0.1:${process.env.MEMOVERSE_TEST_BACKEND_PORT||8026}/__test/stats`)).json();
 async function setup(page,index){
  await page.route('https://cdn.marble.worldlabs.ai/**',route=>route.fulfill({body:route.request().url().includes('.spz')?spz():route.request().url().includes('.glb')?collider():png,contentType:route.request().url().includes('.glb')?'model/gltf-binary':'application/octet-stream',headers:{'Access-Control-Allow-Origin':'*'}}));
  await page.route('https://api.worldlabs.ai/**',()=>{throw new Error('Paid provider must never be contacted');});
@@ -22,12 +22,12 @@ test('first Relive submits once, renders its world and reopens it after reload f
  expect((await stats(request)).submitted).toBe(before+1);
  await page.getByRole('button',{name:'Explore Freely ↗',exact:true}).click();
  await expect(page.locator('[data-world-source="generated"]')).toBeVisible();
- await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
+ await expect(page.locator('[data-world-state="ready"]')).toBeVisible({timeout:30000});
  const worldId=await page.locator('[data-world-id]').getAttribute('data-world-id');
  const pollsBefore=(await stats(request)).polls;
  await page.reload();
  await expect(page.locator('[data-world-id]')).toHaveAttribute('data-world-id',worldId);
- await expect(page.getByText(/Loaded 4 splats and collider/)).toBeVisible({timeout:30000});
+ await expect(page.locator('[data-world-state="ready"]')).toBeVisible({timeout:30000});
  expect((await stats(request)).submitted).toBe(before+1);
  expect((await stats(request)).polls).toEqual(pollsBefore);
 });

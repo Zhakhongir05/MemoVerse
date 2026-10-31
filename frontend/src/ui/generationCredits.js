@@ -3,8 +3,8 @@ import {accountWorldClient} from '../integration/accountWorldClient.js'
 import {pollWorld} from '../integration/worldJobs.js'
 
 export const FREE_GENERATIONS=3
-export const PAID_PACK_GENERATIONS=15
-export const PAID_PACK_PRICE_KRW=10000
+export const PAID_PLAN_PRICE_KRW=15000
+export const PAID_PLAN_UNLIMITED=true
 export function remainingCredits(account){return Math.max(0,account.credits_total-account.credits_used)}
 
 // The plan UI and generation controls read the SAME server-authoritative ledger.

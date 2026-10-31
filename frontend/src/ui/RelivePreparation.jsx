@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { watchPodcastPreparation } from '../integration/preparePodcast.js'
 import { journalWorldRequest, waitForJournalWorld } from '../integration/journalWorldApi.js'
 
 export default function RelivePreparation({ memory, hasWorldViewer, onGenerated, onExplore, onBack, onEdit, user, Photo, generationRequest }) {
@@ -40,21 +41,24 @@ export default function RelivePreparation({ memory, hasWorldViewer, onGenerated,
       onExplore(mode)
     } catch (error) { setError(error.message || 'Could not open this saved world.') }
   }
+  useEffect(() => {
+    if (job?.status === 'succeeded' && user?.id) return watchPodcastPreparation(user.id, memory.id)
+  }, [job?.status, memory.id, user?.id])
   const completed = job?.status === 'succeeded'
   const pending = ['pending', 'submitting'].includes(job?.status)
   return <section className="mj-preparation" aria-busy={pending || starting}>
     <button className="mj-back" onClick={onBack}>← Back to memory</button>
     <div className="mj-preparation-card mj-glass"><p className="mj-eyebrow">YOUR SAVED MEMORY WORLD</p>
       <h1>{completed ? 'Enter Memory World' : pending ? 'Creating your memory world…' : 'Relive in 3D'}</h1>
-      <p role="status">{job?.message || (completed ? 'Your saved world is ready. Reopening uses no generation allowance.' : job?.status === 'none' ? 'No world has been generated for this entry yet.' : !user ? 'Sign in with Google to use saved memory worlds.' : 'Checking for an existing world…')}</p>
-      <p>Saving your journal is free. A new world uses one of three judging-period allowances. Returning to an existing world never generates another.</p>
+      <p role="status">{job?.message || (completed ? 'Your world is ready. Your recording is prepared automatically.' : job?.status === 'none' ? 'No world has been generated for this entry yet.' : !user ? 'Sign in with Google to use saved memory worlds.' : 'Checking for an existing world…')}</p>
+      <p>New worlds include a saved AI podcast. Reopening is free.</p>
       {error && <p role="alert">{error}</p>}
       {!memory.photos.length && <button onClick={onEdit}>Add a photograph</button>}
-      {job?.status === 'none' && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Generate from the selected photograph and send it with your story to World Labs only when you choose below. Editing the journal later will not replace its world.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Relive in 3D · Use 1 allowance'}</button></>}
+      {job?.status === 'none' && !!memory.photos.length && user && <>{memory.photos.length > 1 && <fieldset className="mj-source-photos"><legend>Source photograph</legend>{memory.photos.map((photo, index) => <label key={index}><input type="radio" name="generation-source" checked={photoIndex === index} onChange={() => setPhotoIndex(index)} disabled={starting} />{Photo && <Photo file={photo} alt={`Source photograph ${index + 1}`} />}</label>)}</fieldset>}<p>Creating a memory sends this photo and story to AI services for your world and podcast.</p><button className="mj-primary" disabled={starting || !hasWorldViewer} onClick={start}>{starting ? 'Reserving your world…' : 'Relive in 3D · Use 1 allowance'}</button></>}
       {completed && hasWorldViewer && <div className="mj-relive-choices"><button className="mj-primary" onClick={() => enter('free')}>Explore Freely ↗</button><button className="mj-secondary" onClick={() => enter('guided')}>Take a Guided Journey ✧</button></div>}
       {['failed', 'expired', 'unknown'].includes(job?.status) && <p role="alert">This reservation needs billing/recovery review. Checking again does not start or charge another job.</p>}
-      <button className="mj-secondary" disabled={starting} onClick={() => setRefresh(n => n + 1)}>Check saved world again</button>
-      <button className="mj-secondary" onClick={() => onExplore('free', true)}>Use explicitly labeled sample world</button>
+      <button className="mj-secondary" disabled={starting} onClick={() => setRefresh(n => n + 1)}>Refresh status</button>
+      <button className="mj-secondary" onClick={() => onExplore('free', true)}>Explore sample</button>
     </div>
   </section>
 }
