@@ -4,6 +4,20 @@ import assert from 'node:assert/strict'
 import { importGuestEntries, syncJournal, uploadJournalEntry } from './journalCloud.js'
 import { listEntries, markEntryDeleted, saveEntry } from './journalStore.js'
 
+// Node's structuredClone — which fake-indexeddb uses for every stored value —
+// downcasts File to Blob and loses its name. Browsers keep File intact, so
+// restore that behavior to keep these tests faithful to the real journal.
+const clone = globalThis.structuredClone
+function cloneKeepingFiles(value) {
+  if (value instanceof File) return new File([value], value.name, { type: value.type, lastModified: value.lastModified })
+  if (Array.isArray(value)) return value.map(cloneKeepingFiles)
+  if (value && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneKeepingFiles(item)]))
+  }
+  return clone(value)
+}
+globalThis.structuredClone = cloneKeepingFiles
+
 function fakeCloud(owner) {
   const rows = new Map()
   const objects = new Map()
