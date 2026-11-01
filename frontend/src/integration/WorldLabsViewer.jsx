@@ -204,7 +204,20 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   };
   setEnhancementState(state=>({...state,list:fitAll(state.list),baseline:fitAll(state.baseline)}));
  },[colliderMesh]);
- function selectEnhancement(id){setSelectedEnhancement(id);setSelected(null);}
+ function selectEnhancement(id){
+  // Placing a memory: an object in the room is a reliable target, the invisible
+  // collider is not. Clicking a box attaches the typed memory to that object.
+  if(placing){
+   const item=enhancements.find(e=>e.id===id);
+   if(item&&placing==='move'&&selected){setAnchors(a=>a.map(x=>x.id===selected?{...x,position:[...item.position]}:x));setPlacing(false);setSelectedEnhancement(null);return;}
+   if(item&&memory.trim()){
+    const anchorId=crypto.randomUUID();
+    setAnchors(a=>[...a,{id:anchorId,position:[...item.position],memory:memory.trim()}]);
+    setSelected(anchorId);setSelectedEnhancement(null);setMemory('');setPlacing(false);return;
+   }
+  }
+  setSelectedEnhancement(id);setSelected(null);
+ }
  function updateEnhancement(id,transform){setEnhancementState(state=>({...state,list:state.list.map(e=>e.id===id?{...e,...transform,anchor:'none'}:e)}));}
  // Collider grounding lands once per world load; write it to the baseline too so
  // "Reset" returns to the grounded placement, not the floating payload guess.
@@ -289,7 +302,7 @@ export default function WorldLabsViewer({ world = existingWorld, enhancementResp
   {showTools && <details className="world-tools" open><summary>Memory journal · {anchors.length} anchors</summary><p role="status">{status}</p>
    <label>New memory<textarea value={memory} maxLength={2000} rows={2} placeholder="Write a real memory, then place it in the room…" onChange={e=>setMemory(e.target.value)}/></label>
    <button disabled={!memory.trim()&&!placing} onClick={()=>setPlacing(placing?false:'new')}>{placing?'Cancel placement':'Place memory'}</button>
-   {placing&&<p>Double-click a surface to {placing==='move'?'move this memory':'place your memory'}.</p>}
+   {placing&&<p>Double-click a surface, or click an object in the room, to {placing==='move'?'move this memory':'place your memory'}.</p>}
    {anchors.length>0&&<div className="anchor-list">{anchors.map((a,i)=><button key={a.id} aria-pressed={selected===a.id} onClick={()=>setSelected(a.id)}>Memory {i+1}</button>)}</div>}
    {selectedAnchor&&<section aria-label="Anchor memory"><h3>Your memory</h3><textarea aria-label="Edit memory story" rows={2} maxLength={2000} value={selectedAnchor.memory} onChange={e=>setAnchors(a=>a.map(x=>x.id===selected?{...x,memory:e.target.value}:x))}/>
     {selectedAnchor.photo&&<img alt="Attached memory photograph" src={selectedAnchor.photo}/>}
