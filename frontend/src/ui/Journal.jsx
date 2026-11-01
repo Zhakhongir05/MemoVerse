@@ -1,4 +1,5 @@
-import {savedWorldId,rememberWorld,clearWorldLocation} from './savedWorldLocation.js'
+import {rememberWorld,clearWorldLocation} from './savedWorldLocation.js'
+import {parseRoute,routePath,onRouteChange} from './routes.js'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { formatMemoryDate, journeySteps, listEntries, localDate, markEntryDeleted, MOODS, saveEntry, validateEntry } from './journalStore'
 import { syncJournal } from './journalCloud'
@@ -61,9 +62,14 @@ const DEMO_MEMORY = {
 export default function Journal({ user, onSignIn, onSignOut, checkingAuth, SceneRenderer, WorldViewer, JourneyController, LegacyStudio, generateEnvironment }) {
   const owner = user?.id || 'local-device'
   const hasAccount = !!user
+  // The address is the source of truth. A memory route starts on the journal
+  // list and opens the entry once the journal has loaded.
+  const [initialRoute] = useState(parseRoute)
+  const [view, setView] = useState(() => initialRoute.memoryId || initialRoute.demo ? 'journal' : initialRoute.view)
+  const [routeTick, setRouteTick] = useState(0)
+  const pendingRoute = useRef(initialRoute.memoryId || initialRoute.demo ? initialRoute : null)
   const [favorites, setFavorites] = useState(() => cachedFavorites(owner).values)
   const [favoriteBusy, setFavoriteBusy] = useState(false)
-  const [view, setView] = useState('journal')
   const [generationRequest,setGenerationRequest]=useState(null)
   const [entries, setEntries] = useState([])
   const [selected, setSelected] = useState(null)
@@ -93,7 +99,28 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
   const alive = useRef(false)
   const saveLock = useRef(false)
   const warmedPodcasts = useRef(new Set())
-  const resumeWorld = useRef(savedWorldId())
+
+  // Open whatever the address points at. Called once the journal has loaded,
+  // and again whenever the browser moves Back or Forward.
+  function applyRoute(route) {
+    setSymbolic(false); setActivePhoto(0); setNotice('')
+    if (route.demo) {
+      setDemo(true); setSelected({ ...DEMO_MEMORY, date: localDate() })
+      setJourneyMode('free'); setActiveStep(0); setView('relive'); return
+    }
+    setDemo(false)
+    if (!route.memoryId) { setView(route.view || 'journal'); return }
+    const entry = entries.find(item => item.id === route.memoryId)
+    if (!entry) { setSelected(null); setView('journal'); return }
+    setSelected(entry)
+    if (route.view === 'edit') {
+      setDraft({ ...entry }); setDirty(false); setFieldErrors({}); setInputError(''); setView('create'); return
+    }
+    // Opening from a link never asks for a new world; only a click does.
+    if (route.view === 'prepare') { setGenerationRequest(null); setView('prepare'); return }
+    if (route.view === 'relive') { setJourneyMode('free'); setActiveStep(0); setView('relive'); return }
+    setView('detail')
+  }
 
   useEffect(() => {
     let active = true
@@ -120,13 +147,29 @@ export default function Journal({ user, onSignIn, onSignOut, checkingAuth, Scene
     }
   },[entries,owner,hasAccount,syncing,loading])
   useEffect(()=>{
-    if(!resumeWorld.current||!hasAccount||loading||syncing||loadedOwner.current!==owner)return
-    const entry=entries.find(item=>item.id===resumeWorld.current)
-    resumeWorld.current=null
-    if(!entry){clearWorldLocation();return}
-    setSelected(entry);setDemo(false);setSymbolic(false);setGenerationRequest(null)
-    setView(entry.world?.source==='worldlabs'?'relive':'prepare')
-  },[entries,hasAccount,loading,syncing,owner])
+    const target=pendingRoute.current
+    if(!target||loading)return
+    if(target.memoryId&&!entries.some(entry=>entry.id===target.memoryId)){
+      // The address names a memory that is not in this journal (yet). Wait for
+      // cloud sync when signed in; otherwise show the list rather than a blank.
+      if(hasAccount&&syncing)return
+      pendingRoute.current=null;setView('journal');return
+    }
+    applyRoute(target)
+    // Keep the route pending through this commit so the address writer below
+    // does not see the pre-route state and overwrite the link.
+    queueMicrotask(()=>{if(pendingRoute.current===target)pendingRoute.current=null})
+  },[entries,loading,syncing,hasAccount,routeTick])
+  useEffect(()=>onRouteChange(()=>{pendingRoute.current=parseRoute();setRouteTick(value=>value+1)}),[])
+  // Mirror the current screen into the address. Refreshing, Back, and shared
+  // links then reopen the same screen instead of the landing page.
+  useEffect(()=>{
+    if(loading||pendingRoute.current)return
+    const path=routePath({view,memoryId:selected?.id,demo,draftId:view==='create'?draft.id:null})
+    if(!path)return
+    if(window.location.pathname===path&&!window.location.hash)return
+    window.history.pushState(null,'',path)
+  },[view,selected?.id,demo,draft.id,loading])
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   useEffect(() => { editing.current = dirty }, [dirty])
   useEffect(() => {

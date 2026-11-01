@@ -18,6 +18,14 @@
     {
       "source": "/health",
       "destination": "/api/index"
+    },
+    {
+      "source": "/journal",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/journal/:path*",
+      "destination": "/index.html"
     }
   ],
   "git": {
